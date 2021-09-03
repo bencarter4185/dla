@@ -1,9 +1,3 @@
-use std::vec;
-
-use random::Ran2Generator;
-
-use inline_python::python;
-
 /*
 First attempt at writing some DLA code
 
@@ -14,6 +8,13 @@ Not going to be especially clever or optimised
 Imports
 */
 mod random;
+use random::Ran2Generator;
+
+use inline_python::python;
+
+use math::round::ceil;
+
+use std::time::Instant;
 
 /*
 Functions
@@ -23,22 +24,48 @@ Functions
 fn to_array_index(val: i64) -> usize {
     (val + R_GEN as i64) as usize
 }
-fn _to_coordinate(val: usize) -> i64 {
-    val as i64 - R_GEN as i64
+
+fn pbc(index: usize, s_len: usize) -> (usize, usize) {
+    // Deal with periodic boundary conditions
+    let index_bl: usize; // The index of the site below or left
+    let index_ar: usize; // The index of the site above or right
+
+    if index as i64 - 1 < 0 {
+        index_bl = s_len - 1
+    } else {
+        index_bl = index - 1
+    }
+
+    if index + 1 > s_len - 1 {
+        index_ar = 0
+    } else {
+        index_ar = index + 1
+    }
+
+    (index_bl, index_ar)
 }
 
 /*
 Constants
 */
 
-// Radius of 'generation circle'
-const R_GEN: f64 = 128.0;
+// Pi
 const PI: f64 = std::f64::consts::PI;
 
-// x = x_ind - R_GEN
-// x_ind = x + R_GEN
+// Radius of 'generation circle'
+const R_GEN: f64 = 2048.0;
+
+/*
+TODO:
+    - Generate particles closer to centre
+    - Introduce a 'kill circle'
+    
+*/
 
 fn main() {
+
+    let now = Instant::now();
+
     // Create a new random number generator based on the ran2() function
     let mut rng: Ran2Generator = Ran2Generator::new(0); // Initial seed = 0
 
@@ -50,13 +77,11 @@ fn main() {
     // Generate empty 2D array of side 2*R_GEN (for now)
     let s_len = 2 * R_GEN as usize;
     let mut s: Vec<Vec<bool>> = vec![vec![false; s_len]; s_len];
-    // let mut s: ArrayBase<OwnedRepr<bool>, Dim<[usize; 2]>> =
-    //     Array::from_shape_fn((s_len, s_len), |(_, _)| false);
 
     // Instantiate our initial particle at (0,0)
     let xi: usize = 0 + R_GEN as usize;
     let yi: usize = 0 + R_GEN as usize;
-    s[xi][yi] = true;  //[[xi, yi]] = true;
+    s[xi][yi] = true;
 
     // Generate some angles
     let mut theta: f64;
@@ -65,21 +90,30 @@ fn main() {
     let mut xi: usize;
     let mut yi: usize;
 
+    // Start at a small radius r = 2 (ish)
+    let mut r: f64 = 2.0;
+    let r_kill_ratio: f64 = 1.5;
+    let mut r_kill: f64 = r * r_kill_ratio;
+
+    let mut n_particles: usize = 0;
+
     loop {
         // Generate random angle
         theta = rng.next() * 2.0 * PI;
 
         // Calculate associated x and y indices
         // Generates points with a radius just slightly less than R_GEN
-        x = (R_GEN * theta.cos()) as i64;
-        y = (R_GEN * theta.sin()) as i64;
+        x = (r * theta.cos()) as i64;
+        y = (r * theta.sin()) as i64;
 
         // Get associated array indices
         xi = to_array_index(x);
         yi = to_array_index(y);
 
-        // If point is already occupied: break
-        if s[xi][yi] == true { break }
+        // Saturation/exit condition: If point is already occupied: break
+        if ((x*x + y*y) as f64).sqrt() > R_GEN {
+            break;
+        }
 
         // // Print value
         // println!("Angle generated: {}", theta);
@@ -90,9 +124,6 @@ fn main() {
         //     ((x as f64).powi(2) + (y as f64).powi(2)).sqrt()
         // );
         // println!("");
-
-        // Iteration counter
-        let mut i: usize = 0;
 
         // Temp values for generated numbers
         let mut x_temp: f64;
@@ -149,26 +180,44 @@ fn main() {
             if [s[x_l][yi], s[x_r][yi], s[xi][y_b], s[xi][y_a]].contains(&true) {
                 // Deposit at the current site
                 s[xi][yi] = true;
-    //             println!(
-    //                 r"It stuck!
-    // (x,y) = ({},{})
-    // (xi,yi) = ({},{})
-    // i = {}",
-    //                 x, y, xi, yi, i
-    //             );
+
+
+                /*
+                Need to generate new radius for next particle.
+                Get radius of current particle: perform a ceiling function, add 2 (for safety) and store for next
+                */
+
+                // Need to generate new radius for next particle.
+                // Get radius of deposited particle
+                let r_current = ceil(((x*x + y*y) as f64).sqrt(), 0) + 2.0;
+                if r_current > r {
+                    r = r_current;
+                    r_kill = r * r_kill_ratio;
+                }
+
+                //             println!(
+                //                 r"It stuck!
+                // (x,y) = ({},{})
+                // (xi,yi) = ({},{})
+                // i = {}",
+                //                 x, y, xi, yi, i
+                //             );
                 break;
             }
 
             // Safety valve
-            if i >= 10000000 {
-                // println!("Didn't stick");
-                break;
+            if ((x*x + y*y) as f64).sqrt() > r_kill {
+                break
             }
-
-            // Increment iterations
-            i += 1;
         }
+    
+        n_particles += 1;
     }
+
+    let new_now = Instant::now();
+
+    println!(r"Done! For radius = {}: Took {:?},
+added {} particles", R_GEN, new_now.duration_since(now), n_particles);
 
     // Create a clone of s that we don't mind losing
     let s_py = s.clone();
@@ -178,7 +227,7 @@ fn main() {
         from matplotlib import colors
         import numpy as np
 
-        // Use seaborn for pretty graphs 
+        // Use seaborn for pretty graphs
         plt.style.use("default")
 
         theta = np.linspace(0, 2*np.pi, 100)
@@ -187,10 +236,10 @@ fn main() {
 
         x1 = r*np.cos(theta) + r
         x2 = r*np.sin(theta) + r
-        
+
 
         s = np.array('s_py)
-        
+
         fig = plt.figure()
         fig.set_size_inches(12.5, 12.5)
 
@@ -234,15 +283,11 @@ fn main() {
 
     // We've now added blocks 'to saturation'
     for r in radii.iter() {
-
-
-
         let mut x: i64 = 0 - r;
         let mut xi: usize = to_array_index(x);
         let mut y: i64;
         let mut yi: usize;
 
-        let mut n_circle: i64 = 0; // Number of points in the circle
         let mut n_tree: i64 = 0; // Number of points in the circle part of the tree
 
         while x < *r {
@@ -252,13 +297,10 @@ fn main() {
 
             while y < *r {
                 if x * x + y * y < r * r {
-                    // We're in the circle we want to check.
+                    // Now we're in the circle, check if there is a tree or empty space
                     if s[xi][yi] == true {
                         n_tree += 1;
                     }
-
-                    // println!("In circle: ({},{})", x, y);
-                    n_circle += 1;
                 }
 
                 y += 1;
@@ -268,20 +310,20 @@ fn main() {
             xi += 1;
         }
 
-//         println!(r"Checked radius {}
-// Number of points in circle: {}
-// Number of points in tree: {}", r, n_circle, n_tree);
+        //         println!(r"Checked radius {}
+        // Number of points in circle: {}
+        // Number of points in tree: {}", r, n_circle, n_tree);
 
-    results[i] = n_tree;
+        results[i] = n_tree;
 
-    i+= 1;
+        i += 1;
     }
 
     python! {
         import matplotlib.pyplot as plt
         import numpy as np
 
-        // Use seaborn for pretty graphs 
+        // Use seaborn for pretty graphs
         plt.style.use("seaborn")
 
         // Create figure
@@ -297,26 +339,4 @@ fn main() {
 
         plt.show()
     }
-
-
-}
-
-fn pbc(index: usize, s_len: usize) -> (usize, usize) {
-    // Deal with periodic boundary conditions in x
-    let index_bl: usize; // The index of the site below or left
-    let index_ar: usize; // The index of the site above or right
-
-    if index as i64 - 1 < 0 {
-        index_bl = s_len - 1
-    } else {
-        index_bl = index - 1
-    }
-
-    if index + 1 > s_len - 1 {
-        index_ar = 0
-    } else {
-        index_ar = index + 1
-    }
-
-    (index_bl, index_ar)
 }
