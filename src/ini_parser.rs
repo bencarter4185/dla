@@ -19,22 +19,22 @@ pub struct SimulationParams {
     pub max_radius: i32,
     pub max_seed: i32,
     pub init_seed: i32,
-    pub add_plot: bool,
+    pub add_plot_tree: bool,
+    pub add_plot_data: bool,
     pub write_data: bool,
+    pub benchmark: bool,
 }
 
 impl SimulationParams {
-    pub fn new(
-        total_params: InputParams,
-        max_radius: i32,
-        max_seed: i32,
-    ) -> SimulationParams {
+    pub fn new(total_params: InputParams, max_radius: i32, max_seed: i32) -> SimulationParams {
         let current_params: SimulationParams = SimulationParams {
             max_radius: max_radius,
             max_seed: max_seed,
             init_seed: total_params.init_seed,
-            add_plot: total_params.add_plot,
+            add_plot_tree: total_params.add_plot_tree,
+            add_plot_data: total_params.add_plot_data,
             write_data: total_params.write_data,
+            benchmark: total_params.benchmark,
         };
         current_params
     }
@@ -44,8 +44,11 @@ pub struct InputParams {
     pub substrate_radii: Vec<i32>,
     pub seeds: Vec<i32>,
     pub init_seed: i32,
-    pub add_plot: bool,
+    pub add_plot_tree: bool,
+    pub add_plot_data: bool,
     pub write_data: bool,
+    pub benchmark: bool,
+    pub benchmark_max: i32,
 }
 
 impl InputParams {
@@ -64,24 +67,37 @@ impl InputParams {
         let init_seed: i32 = parse_config_i32(&config, "options", "init_seed")
             .expect("Failed to parse initial random number seed.");
 
-        let add_plot: bool = parse_config_bool(&config, "options", "add_plot")
-            .expect("Failed to parse whether to add plot.");
+        let add_plot_tree: bool = parse_config_bool(&config, "options", "add_plot_tree")
+            .expect("Failed to parse whether to add plot for brownian tree.");
+
+        let add_plot_data: bool = parse_config_bool(&config, "options", "add_plot_data")
+            .expect("Failed to parse whether to add plot for data.");
 
         let write_data: bool = parse_config_bool(&config, "options", "write_data")
             .expect("Failed to parse whether to write data to file.");
+
+        let benchmark: bool = parse_config_bool(&config, "options", "benchmark")
+            .expect("Failed to parse whether to benchmark.");
+
+        let benchmark_max: i32 = parse_config_i32(&config, "options", "benchmark_max")
+            .expect("Failed to parse max radius to benchmark.");
 
         // Run-once to show the user the parameters about to be simulated
         if displ_params == true {
             println!(
                 r"
-        Parsed config from `./config/config_sim.ini`...
-            Running simulations for parameters:
-                Substrate Radii = {:?},
-                Seeds = {:?},
-                Initial Seed = {:?}
-                Add plot: {:?},
-                        ",
-                substrate_radii, seeds, init_seed,  add_plot
+Parsed config from `./config/config_sim.ini`...
+    Simulation parameters supplied:
+        Substrate Radii = {:?},
+        Seeds = {:?},
+        Initial Seed = {:?},
+        Add plot (tree): {:?},
+        Add plot (data): {:?},
+        Write data to disk {:?}:
+        Run Benchmark: {:?},
+        Max radius to benchmark: {:?}
+                ",
+                substrate_radii, seeds, init_seed, add_plot_tree, add_plot_data, write_data, benchmark, benchmark_max
             );
         };
 
@@ -89,8 +105,11 @@ impl InputParams {
             substrate_radii: substrate_radii,
             seeds: seeds,
             init_seed: init_seed,
-            add_plot: add_plot,
+            add_plot_tree: add_plot_tree,
+            add_plot_data: add_plot_data,
             write_data: write_data,
+            benchmark: benchmark,
+            benchmark_max: benchmark_max,
         };
 
         params
