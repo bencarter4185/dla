@@ -252,6 +252,40 @@ fn launch_particles(data: &mut Data) {
                         // Increment i
                         i += 1;
 
+                        let mut xs: Vec<f32> = Vec::new();
+                        let mut ys: Vec<f32> = Vec::new();
+            
+                        for particle in data.omega.iter() {
+                            if particle.0 != 0 {
+                                xs.push(particle.1[0]);
+                                ys.push(particle.1[1]);
+                            }
+                        }
+            
+                        python! {
+                            import matplotlib.pyplot as plt
+                            from matplotlib.patches import Circle
+                            import numpy as np
+            
+                            // Use seaborn for pretty graphs
+                            plt.style.use("default")
+            
+                            fig = plt.figure()
+            
+                            // initialize axis, important: set the aspect ratio to equal
+                            ax = fig.add_subplot(111, aspect="equal")
+            
+                            // define axis limits for all patches to show
+                            ax.axis([min('xs)-1., max('xs)+1., min('ys)-1., max('ys)+1.])
+            
+                            for x, y in zip('xs, 'ys):
+                                ax.add_artist(Circle(xy=(x, y), radius=1))
+            
+                            ax.add_artist(Circle(xy=('xs[-1], 'ys[-1]), radius=1, color="#FF0000"))
+            
+                            plt.show()
+                        }
+
                         // Particle deposited. Break from the infinite loop
                         break;
                     }
