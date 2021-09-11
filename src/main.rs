@@ -17,7 +17,6 @@ use itertools::iproduct;
 Structs
 */
 
-#[derive(Debug)]
 pub struct InputParams {
     n_particles: Vec<usize>,
     array_sizes: Vec<usize>,

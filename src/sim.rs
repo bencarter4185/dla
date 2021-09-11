@@ -1,5 +1,14 @@
+/*
+Library file used to run DLA simulations.
+*/
+
+/*
+Imports
+*/
+
 use std::time::Instant;
 
+use itertools::Itertools;
 use ndarray::{Array, ArrayBase, Dim, OwnedRepr};
 
 use math::round::floor;
@@ -12,10 +21,16 @@ mod random;
 
 use inline_python::python;
 
+use hashbrown::HashMap;
+
+/*
+Constants
+*/
+
 const PI_2: f32 = std::f32::consts::PI * 2.0;
 
 /*
-Struct based on input parameters and generated arrays
+Structs
 */
 
 struct Data {
@@ -38,9 +53,7 @@ struct Data {
     c: u8,        // Collision condition
     // Arrays
     /* Omega: Off-lattice array of size n (number of particles) x 2 */
-    omega: Vec<(u32, [f32; 2])>,
-    /* Upsilon: On-lattice cluster grid */
-    upsilon: ArrayBase<OwnedRepr<u32>, Dim<[usize; 2]>>,
+    omega: HashMap<usize, (f32, f32)>,
     /* Theta: Vicinity grid */
     theta: ArrayBase<OwnedRepr<u8>, Dim<[usize; 2]>>,
     /* Psi: On-lattice distance grid */
@@ -98,8 +111,7 @@ impl Data {
             ix0_s: ix0_s,
             iy0_s: iy0_s,
             c: c,
-            omega: vec![(0, [0.0, 0.0]); n],
-            upsilon: Array::from_elem((a, a), 0),
+            omega: HashMap::with_capacity(n),
             theta: generate_theta(d_max),
             psi: Array::from_elem((a, a), d_max),
             rng: rng,
@@ -111,7 +123,7 @@ impl Data {
 
 pub fn run(n: usize, a: usize, d_max: u8, max_seed: usize, params: &InputParams) {
     // Unpack other parameters from InputParams struct
-    let _write_data: bool = params.write_data;
+    let write_data: bool = params.write_data;
 
     let seeds = 0..max_seed;
 
@@ -124,8 +136,7 @@ pub fn run(n: usize, a: usize, d_max: u8, max_seed: usize, params: &InputParams)
         let y0: f32 = data.y0;
 
         // Add seed particle at origin
-        data.omega[0] = (1, [data.x0, data.y0]);
-        data.upsilon[[data.ix0_a, data.iy0_a]] = 1;
+        data.omega.insert(cantor(data.ix0_a, data.iy0_a), (x0, y0));
         overlap_psi_theta(&mut data, x0, y0);
 
         // Calculate `cpu time` (kind of)
@@ -137,48 +148,88 @@ pub fn run(n: usize, a: usize, d_max: u8, max_seed: usize, params: &InputParams)
         let new_now = Instant::now();
         println!(r"Computation time = {:?}", new_now.duration_since(now));
 
+        /* Finished depositing. Now need to calculate values to write to disk */
+
+        // Generate empty vectors to store results
+        let max_radius: usize = (a - 1) / 2;
+
+        let radii: Vec<usize> = (1..max_radius).collect_vec();
+
+        let mut n_tree_vec: Vec<usize> = vec![0; radii.len()];
+        let mut i: usize = 0;
+
+        let mut x2: f32;
+        let mut y2: f32;
+        let mut r2: f32;
+
+        let mut reached_max: bool = false;
+
+        // Not writing data to .csv yet
+
+        if write_data == true {
+            // Add up all the blocks
+            for r in radii.iter() {
+                if reached_max == true {
+                    n_tree_vec[i] = data.n;
+                    i += 1;
+                    continue;
+                }
+
+                // Type convert r to float
+                let r: f32 = *r as f32;
+
+                let mut x: f32 = 0.0 - r;
+                let mut y: f32;
+
+                let mut n_tree: usize = 0; // Number of points in the circle of radius r
+
+                while x <= r {
+                    // Reset y
+                    y = 0.0 - r;
+                    x2 = x.powi(2);
+                    r2 = r.powi(2);
+
+                    while y <= r {
+                        let (xi, yi) = get_array_index(x, y, a);
+
+                        y2 = y.powi(2);
+
+                        if x2 + y2 < r2 {
+                            // Square is inside the circle. Check if there is a tree or empty
+                            if data.psi[[xi, yi]] == 0 {
+                                n_tree += 1;
+                            }
+                        }
+                        y += 1.0;
+                    }
+                    x += 1.0;
+                }
+
+                if n_tree == data.n && reached_max == false {
+                    println!(
+                        r"Checked radius {}
+                Number of points in tree: {}",
+                        r, n_tree
+                    );
+                    reached_max = true;
+                }
+
+                n_tree_vec[i] = n_tree;
+
+                i += 1;
+            }
+        }
+
         // Added particles
         if params.plot_tree == true {
-            let mut xs: Vec<f32> = Vec::new();
-            let mut ys: Vec<f32> = Vec::new();
-
-            for particle in data.omega.iter() {
-                if particle.0 != 0 {
-                    xs.push(particle.1[0]);
-                    ys.push(particle.1[1]);
-                }
-            }
-
-            python! {
-                import matplotlib.pyplot as plt
-                from matplotlib.patches import Circle
-                import numpy as np
-
-                // Use seaborn for pretty graphs
-                plt.style.use("default")
-
-                fig = plt.figure()
-
-                // initialize axis, important: set the aspect ratio to equal
-                ax = fig.add_subplot(111, aspect="equal")
-
-                // define axis limits for all patches to show
-                ax.axis([min('xs)-1., max('xs)+1., min('ys)-1., max('ys)+1.])
-
-                for x, y in zip('xs, 'ys):
-                    ax.add_artist(Circle(xy=(x, y), radius=1))
-
-                // ax.add_artist(Circle(xy=('xs[-1], 'ys[-1]), radius=1, color="#FF0000"))
-
-                plt.show()
-            }
+            plot_tree(&data)
         }
     }
 }
 
 fn calc_rg(data: &mut Data) -> f32 {
     // Calculate the new generation radius
-    data.r_max + 5 as f32
+    data.r_max * 1.1 as f32
 }
 
 fn launch_particles(data: &mut Data) {
@@ -188,14 +239,11 @@ fn launch_particles(data: &mut Data) {
     */
 
     let mut i: usize = 2; // First particle to stick will be i = 2
-    while i < data.n + 1 {
+    while i <= data.n + 1 {
         // Generate new particle
         let mut alpha: f32 = next_angle(&mut data.rng);
         let mut x: f32 = data.r_g * alpha.cos(); // x coordinate of particle
         let mut y: f32 = data.r_g * alpha.sin(); // y coordinate of particle
-
-        // // Do a small step of length l_min
-        // do_step(&mut data.rng, &mut x, &mut y, data.l_min);
 
         let mut d_wc: u8;
 
@@ -220,14 +268,18 @@ fn launch_particles(data: &mut Data) {
 
             // Get the current distance d_wc
             let (xi, yi) = get_array_index(x, y, data.a);
-            d_wc = data.psi[[xi, yi]];
+            // Catch index out of range exceptions by defaulting to d_max
+            d_wc = match data.psi.get([xi, yi]) {
+                Some(val) => *val,
+                None => data.d_max,
+            };
 
             // Decide which situation the particle is currently in
             match d_wc {
                 d_wc if d_wc <= data.c => {
                     // Possibility of collision on next step
                     // Get all the particles in upsilon in a square of size (2*c + 1) around the current x and y
-                    let particles: Vec<(u32, [f32; 2])> = find_particles(data, x, y);
+                    let particles: Vec<(f32, f32)> = find_particles(data, x, y);
                     let lh = check_collisions(data, particles, &mut x, &mut y, alpha);
 
                     if lh != f32::MAX {
@@ -245,8 +297,7 @@ fn launch_particles(data: &mut Data) {
 
                         // Update arrays
                         let (xi, yi) = get_array_index(x, y, data.a);
-                        data.omega[i - 1] = (i as u32, [x, y]);
-                        data.upsilon[[xi, yi]] = i as u32;
+                        data.omega.insert(cantor(xi, yi), (x, y));
                         overlap_psi_theta(data, x, y);
 
                         // Increment i
@@ -283,7 +334,7 @@ fn launch_particles(data: &mut Data) {
     }
 }
 
-fn find_particles(data: &mut Data, x: f32, y: f32) -> Vec<(u32, [f32; 2])> {
+fn find_particles(data: &mut Data, x: f32, y: f32) -> Vec<(f32, f32)> {
     // Assume size means radius, i.e. the square sizer is actually of side (2*data.c + 1)
     let side: usize = (2 * data.c + 1) as usize;
 
@@ -300,22 +351,34 @@ fn find_particles(data: &mut Data, x: f32, y: f32) -> Vec<(u32, [f32; 2])> {
     let x_offset = ixp - ixt0;
     let y_offset = iyp - iyt0;
 
-    let mut ixp: usize; // x index of cell in Upsilon
-    let mut iyp: usize; // y index of cell in Upsilon
-    let mut val: u32;
+    let mut ixp: usize; // x index of cell in Psi
+    let mut iyp: usize; // y index of cell in Psi
+    let mut val: u8;
 
-    let mut particles: Vec<(u32, [f32; 2])> = Vec::new();
+    let mut particles: Vec<(f32, f32)> = Vec::new();
+
+    let mut x: f32;
+    let mut y: f32;
 
     for ((ixt, iyt), _) in square.indexed_iter() {
         ixp = ixt + x_offset;
         iyp = iyt + y_offset;
 
         // Get the value in the cell
-        val = data.upsilon[[ixp, iyp]];
+        val = match data.psi.get([ixp, iyp]) {
+            Some(val) => *val,
+            // Handle out of range exceptions
+            None => panic!("Trying to add a particle out of bounds! Set the array size to be larger and try again."),
+        };
 
         // If there is a particle in the cell, add it to particles
-        if val != 0 {
-            particles.push(data.omega[val as usize - 1])
+        if val == 0 {
+            // Get the `label` of this grid position
+            let can: usize = cantor(ixp, iyp);
+            x = data.omega[&can].0;
+            y = data.omega[&can].1;
+
+            particles.push((x, y))
         }
     }
 
@@ -342,8 +405,13 @@ fn overlap_psi_theta(data: &mut Data, x: f32, y: f32) {
         ixp = ixt + ixo;
         iyp = iyt + iyo;
 
+        let val_psi = match data.psi.get([ixp, iyp]) {
+            Some(val) => *val,
+            None => panic!("Calculating new distances has caused an out of bounds error. Try again with a larger array or less particles."),
+        };
+
         // Replace the cell with the smallest of the two values
-        data.psi[[ixp, iyp]] = min(data.psi[[ixp, iyp]], *val_t);
+        data.psi[[ixp, iyp]] = min(val_psi, *val_t);
     }
 }
 
@@ -353,29 +421,35 @@ fn next_angle(rng: &mut Ran2Generator) -> f32 {
 
 fn check_collisions(
     data: &mut Data,
-    particles: Vec<(u32, [f32; 2])>,
+    particles: Vec<(f32, f32)>,
     x: &mut f32,
     y: &mut f32,
-    alpha: f32,
+    alpha: f32
 ) -> f32 {
+    // Type convert all our variables to f64 to increase precision
+    let x: f64 = *x as f64;
+    let y: f64 = *y as f64;
+    let alpha: f64 = alpha as f64;
+
     // Define variables for the quadratic solver
     let mut a: f64;
     let mut b: f64;
     let mut c: f64;
 
     // Calculate the diameter of the particle
-    let dp: f32 = 2.0 * data.rp;
+    let dp: f64 = 2.0 * data.rp as f64;
 
     // Keep a note of the smallest jump distance
     let mut lh: f32 = f32::MAX;
 
     for particle in particles {
-        let (_, [xp, yp]) = particle;
+        let xp = particle.0 as f64;
+        let yp = particle.1 as f64;
 
         // Define our variables for the quadratic solver
         a = 1.0;
-        b = (2.0 * (alpha.cos() * (*x - xp) + alpha.sin() * (*y - yp))) as f64;
-        c = ((xp - *x).powi(2) + (yp - *y).powi(2) - dp.powi(2)) as f64;
+        b = 2.0 * (alpha.cos() * (x - xp) + alpha.sin() * (y - yp));
+        c = (xp - x).powi(2) + (yp - y).powi(2) - dp.powi(2);
 
         // Solve the quadratic equation and get the roots
         let roots = quad(c, b, a);
@@ -392,6 +466,7 @@ fn check_collisions(
         */
 
         // Extract the smaller root
+        // Can now safely convert back to f32
         let root: f32;
         match roots.get(0) {
             Some(val) => {
@@ -492,11 +567,46 @@ fn max_f32(a: f32, b: f32) -> f32 {
     }
 }
 
-// Return the largest of two integers
-fn _max_int<T: Ord>(a: T, b: T) -> T {
-    if a >= b {
-        a
-    } else {
-        b
+fn plot_tree(data: &Data) {
+    let mut xs: Vec<f32> = Vec::new();
+    let mut ys: Vec<f32> = Vec::new();
+
+    for particle in data.omega.iter() {
+        let (x, y) = particle.1;
+
+        xs.push(*x);
+        ys.push(*y);
     }
+
+    python! {
+        import matplotlib.pyplot as plt
+        from matplotlib.patches import Circle
+        import numpy as np
+
+        // Use seaborn for pretty graphs
+        plt.style.use("seaborn")
+
+        fig = plt.figure()
+
+        // initialize axis, important: set the aspect ratio to equal
+        ax = fig.add_subplot(111, aspect="equal")
+
+        // define axis limits for all patches to show
+        ax.axis([min('xs)-1., max('xs)+1., min('ys)-1., max('ys)+1.])
+
+        for x, y in zip('xs, 'ys):
+            ax.add_artist(Circle(xy=(x, y), radius=1, color="#555599"))
+
+        // Hide axis
+        plt.axis("off")
+
+        plt.grid("off")
+
+        plt.show()
+    }
+}
+
+fn cantor(k1: usize, k2: usize) -> usize {
+    // Return a unique integer based on the two numbers
+    ((k1 + k2) * (k1 + k2 + 1)) / 2 + k2
 }
