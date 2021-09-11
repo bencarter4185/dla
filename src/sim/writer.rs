@@ -2,6 +2,8 @@ extern crate csv;
 use std::error::Error;
 use std::{env, fs};
 
+use crate::InputParams;
+
 use super::Data;
 
 pub fn check_folder_exists(folder: &String) -> Result<bool, Box<dyn Error>> {
@@ -19,7 +21,7 @@ pub fn check_folder_exists(folder: &String) -> Result<bool, Box<dyn Error>> {
     Ok(folder_exists)
 }
 
-pub fn write_tree(data: &Data) -> Result<(), Box<dyn Error>> {
+pub fn write_tree(data: &Data, params: &InputParams, seed: usize) -> Result<(), Box<dyn Error>> {
     // Check if the `data` folder exists. If not, create it
     let folder: String = String::from("data");
     if !(check_folder_exists(&folder)?) {
@@ -28,8 +30,17 @@ pub fn write_tree(data: &Data) -> Result<(), Box<dyn Error>> {
 
     // Create a filename based on input parameters
     let filepath = format!(
-        "./{}/tree_n{}_dmax{}_", folder, data.n, data.d_max
+        "./{}/tree_n{}_dmax{}_seed{}_iseed{}.csv", folder, data.n, data.d_max, seed, params.init_seed
     );
+
+    let mut wtr = csv::Writer::from_path(filepath)?;
+
+    // Iterate through Omega 
+    for item in &data.omega {
+        let x: String = item.1.0.to_string();
+        let y: String = item.1.1.to_string();
+        wtr.write_record([x, y])?;
+    }
 
     Ok(())
 }

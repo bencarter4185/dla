@@ -151,7 +151,7 @@ pub fn run(n: usize, a: usize, d_max: u8, max_seed: usize, params: &InputParams)
 
         // Added particles
         if params.write_tree == true {
-            write_tree(&data)?;
+            write_tree(&data, params, seed)?;
         }
 
         // Not writing data to .csv yet

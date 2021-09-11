@@ -14,3 +14,6 @@
 
 # Remove any generated data
 /data/
+
+# Ignore folder of python/jupyter notebooks for now
+/py/

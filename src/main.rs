@@ -13,6 +13,8 @@ use ini_parser::*;
 
 use itertools::iproduct;
 
+use std::error::Error;
+
 /*
 Structs
 */
@@ -51,7 +53,7 @@ impl InputParams {
     }
 }
 
-fn main() {
+fn main() -> Result<(), Box<dyn Error>> {
     // Parse in the params from the `.ini` file.
     let params: InputParams = InputParams::new();
 
@@ -68,7 +70,7 @@ fn main() {
         );
 
         let now = Instant::now();
-        sim::run(*n, *a, *d_max, *max_seed, &params);
+        sim::run(*n, *a, *d_max, *max_seed, &params)?;
         let new_now = Instant::now();
         println!(
             r"Done! Total time = {:?}
@@ -76,4 +78,6 @@ fn main() {
             new_now.duration_since(now)
         );
     }
+
+    Ok(())
 }
