@@ -6,6 +6,10 @@ Library file used to run DLA simulations.
 Imports
 */
 
+use std::error::Error;
+
+mod writer;
+
 use std::time::Instant;
 
 use itertools::Itertools;
@@ -15,11 +19,9 @@ use math::round::floor;
 
 use kurbo::common::solve_quadratic as quad;
 
-use crate::{sim::random::Ran2Generator, InputParams};
+use crate::{InputParams, sim::{random::Ran2Generator, writer::write_tree}};
 
 mod random;
-
-use inline_python::python;
 
 use hashbrown::HashMap;
 
@@ -33,7 +35,7 @@ const PI_2: f32 = std::f32::consts::PI * 2.0;
 Structs
 */
 
-struct Data {
+pub struct Data {
     // Input Parameters
     n: usize, // number of particles
     a: usize, // array size
@@ -121,10 +123,7 @@ impl Data {
     }
 }
 
-pub fn run(n: usize, a: usize, d_max: u8, max_seed: usize, params: &InputParams) {
-    // Unpack other parameters from InputParams struct
-    let write_data: bool = params.write_data;
-
+pub fn run(n: usize, a: usize, d_max: u8, max_seed: usize, params: &InputParams) -> Result<(), Box<dyn Error>> {
     let seeds = 0..max_seed;
 
     for seed in seeds {
@@ -150,81 +149,89 @@ pub fn run(n: usize, a: usize, d_max: u8, max_seed: usize, params: &InputParams)
 
         /* Finished depositing. Now need to calculate values to write to disk */
 
-        // Generate empty vectors to store results
-        let max_radius: usize = (a - 1) / 2;
-
-        let radii: Vec<usize> = (1..max_radius).collect_vec();
-
-        let mut n_tree_vec: Vec<usize> = vec![0; radii.len()];
-        let mut i: usize = 0;
-
-        let mut x2: f32;
-        let mut y2: f32;
-        let mut r2: f32;
-
-        let mut reached_max: bool = false;
+        // Added particles
+        if params.write_tree == true {
+            write_tree(&data)?;
+        }
 
         // Not writing data to .csv yet
 
-        if write_data == true {
-            // Add up all the blocks
-            for r in radii.iter() {
-                if reached_max == true {
-                    n_tree_vec[i] = data.n;
-                    i += 1;
-                    continue;
-                }
-
-                // Type convert r to float
-                let r: f32 = *r as f32;
-
-                let mut x: f32 = 0.0 - r;
-                let mut y: f32;
-
-                let mut n_tree: usize = 0; // Number of points in the circle of radius r
-
-                while x <= r {
-                    // Reset y
-                    y = 0.0 - r;
-                    x2 = x.powi(2);
-                    r2 = r.powi(2);
-
-                    while y <= r {
-                        let (xi, yi) = get_array_index(x, y, a);
-
-                        y2 = y.powi(2);
-
-                        if x2 + y2 < r2 {
-                            // Square is inside the circle. Check if there is a tree or empty
-                            if data.psi[[xi, yi]] == 0 {
-                                n_tree += 1;
-                            }
-                        }
-                        y += 1.0;
-                    }
-                    x += 1.0;
-                }
-
-                if n_tree == data.n && reached_max == false {
-                    println!(
-                        r"Checked radius {}
-                Number of points in tree: {}",
-                        r, n_tree
-                    );
-                    reached_max = true;
-                }
-
-                n_tree_vec[i] = n_tree;
-
-                i += 1;
-            }
-        }
-
-        // Added particles
-        if params.plot_tree == true {
-            plot_tree(&data)
+        if params.write_data == true {
+            count_tree(&data)
         }
     }
+
+    Ok(())
+}
+
+fn count_tree(data: &Data) {
+    // Generate empty vectors to store results
+    let max_radius: usize = (data.a - 1) / 2;
+
+    let radii: Vec<usize> = (1..max_radius).collect_vec();
+
+    let mut n_tree_vec: Vec<usize> = vec![0; radii.len()];
+    let mut i: usize = 0;
+
+    let mut x2: f32;
+    let mut y2: f32;
+    let mut r2: f32;
+
+    let mut reached_max: bool = false;
+
+    // Add up all the blocks
+    for r in radii.iter() {
+        if reached_max == true {
+            n_tree_vec[i] = data.n;
+            i += 1;
+            continue;
+        }
+
+        // Type convert r to float
+        let r: f32 = *r as f32;
+
+        let mut x: f32 = 0.0 - r;
+        let mut y: f32;
+
+        let mut n_tree: usize = 0; // Number of points in the circle of radius r
+
+        while x <= r {
+            // Reset y
+            y = 0.0 - r;
+            x2 = x.powi(2);
+            r2 = r.powi(2);
+
+            while y <= r {
+                let (xi, yi) = get_array_index(x, y, data.a);
+
+                y2 = y.powi(2);
+
+                if x2 + y2 < r2 {
+                    // Square is inside the circle. Check if there is a tree or empty
+                    if data.psi[[xi, yi]] == 0 {
+                        n_tree += 1;
+                    }
+                }
+                y += 1.0;
+            }
+            x += 1.0;
+        }
+
+        if n_tree == data.n && reached_max == false {
+            println!(
+                r"Checked radius {}
+        Number of points in tree: {}",
+                r, n_tree
+            );
+            reached_max = true;
+        }
+
+        n_tree_vec[i] = n_tree;
+
+        i += 1;
+    }
+
+    println!("{:?}", n_tree_vec)
 }
 
 fn calc_rg(data: &mut Data) -> f32 {
@@ -424,7 +431,7 @@ fn check_collisions(
     particles: Vec<(f32, f32)>,
     x: &mut f32,
     y: &mut f32,
-    alpha: f32
+    alpha: f32,
 ) -> f32 {
     // Type convert all our variables to f64 to increase precision
     let x: f64 = *x as f64;
@@ -567,44 +574,44 @@ fn max_f32(a: f32, b: f32) -> f32 {
     }
 }
 
-fn plot_tree(data: &Data) {
-    let mut xs: Vec<f32> = Vec::new();
-    let mut ys: Vec<f32> = Vec::new();
+// fn plot_tree(data: &Data) {
+//     let mut xs: Vec<f32> = Vec::new();
+//     let mut ys: Vec<f32> = Vec::new();
 
-    for particle in data.omega.iter() {
-        let (x, y) = particle.1;
+//     for particle in data.omega.iter() {
+//         let (x, y) = particle.1;
 
-        xs.push(*x);
-        ys.push(*y);
-    }
+//         xs.push(*x);
+//         ys.push(*y);
+//     }
 
-    python! {
-        import matplotlib.pyplot as plt
-        from matplotlib.patches import Circle
-        import numpy as np
+//     python! {
+//         import matplotlib.pyplot as plt
+//         from matplotlib.patches import Circle
+//         import numpy as np
 
-        // Use seaborn for pretty graphs
-        plt.style.use("seaborn")
+//         // Use seaborn for pretty graphs
+//         plt.style.use("seaborn")
 
-        fig = plt.figure()
+//         fig = plt.figure()
 
-        // initialize axis, important: set the aspect ratio to equal
-        ax = fig.add_subplot(111, aspect="equal")
+//         // initialize axis, important: set the aspect ratio to equal
+//         ax = fig.add_subplot(111, aspect="equal")
 
-        // define axis limits for all patches to show
-        ax.axis([min('xs)-1., max('xs)+1., min('ys)-1., max('ys)+1.])
+//         // define axis limits for all patches to show
+//         ax.axis([min('xs)-1., max('xs)+1., min('ys)-1., max('ys)+1.])
 
-        for x, y in zip('xs, 'ys):
-            ax.add_artist(Circle(xy=(x, y), radius=1, color="#555599"))
+//         for x, y in zip('xs, 'ys):
+//             ax.add_artist(Circle(xy=(x, y), radius=1, color="#555599"))
 
-        // Hide axis
-        plt.axis("off")
+//         // Hide axis
+//         plt.axis("off")
 
-        plt.grid("off")
+//         plt.grid("off")
 
-        plt.show()
-    }
-}
+//         plt.show()
+//     }
+// }
 
 fn cantor(k1: usize, k2: usize) -> usize {
     // Return a unique integer based on the two numbers

@@ -24,7 +24,7 @@ pub struct InputParams {
     seeds: Vec<usize>,
     init_seed: usize,
     write_data: bool,
-    plot_tree: bool,
+    write_tree: bool,
 }
 
 impl InputParams {
@@ -44,7 +44,7 @@ impl InputParams {
                 .expect("Failed to parse initial random number seed."),
             write_data: parse_config_bool(&config, "options", "write_data")
                 .expect("Failed to parse whether to write data to disk."),
-            plot_tree: parse_config_bool(&config, "options", "plot_tree")
+            write_tree: parse_config_bool(&config, "options", "write_tree")
                 .expect("Failed to parse whether to plot tree."),
         };
         params
