@@ -1,2 +1,2 @@
 # dla
-Diffustion limited aggregation
+Diffusion limited aggregation

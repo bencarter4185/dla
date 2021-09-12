@@ -236,7 +236,7 @@ fn count_tree(data: &Data) {
 
 fn calc_rg(data: &mut Data) -> f32 {
     // Calculate the new generation radius
-    data.r_max * 1.1 as f32
+    data.r_max * 1.1 as f32 + data.rp * 2.0
 }
 
 fn launch_particles(data: &mut Data) {
@@ -517,9 +517,9 @@ fn get_array_index(x: f32, y: f32, side_length: usize) -> (usize, usize) {
     /*
     Get array index of cell given (x, y) coordinates, and side length of array
     */
-    let ix = ((side_length as f32 + 1.0) / 2.0 - x.round() - 1.0) as usize;
-    let iy = ((side_length as f32 + 1.0) / 2.0 - y.round() - 1.0) as usize;
-    (ix, iy)
+    let xi = ((side_length as f32 + 1.0) / 2.0 - x.round()) as usize;
+    let yi = ((side_length as f32 + 1.0) / 2.0 - y.round()) as usize;
+    (xi, yi)
 }
 
 fn generate_theta(d_max: u8) -> ArrayBase<OwnedRepr<u8>, Dim<[usize; 2]>> {
@@ -574,7 +574,7 @@ fn max_f32(a: f32, b: f32) -> f32 {
     }
 }
 
-// fn plot_tree(data: &Data) {
+// fn plot_tree(data: &Data, x: f32, y: f32) {
 //     let mut xs: Vec<f32> = Vec::new();
 //     let mut ys: Vec<f32> = Vec::new();
 
