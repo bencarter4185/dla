@@ -12,7 +12,7 @@ import numpy as np
 # USER PARAMS
 
 # Specify input filepath here (hard-coded)
-file_in = "../data/tree_n100000_dmax90_seed0_iseed0.csv"
+file_in = "../data/tree_n100_dmax90_seed0_iseed0.csv"
 
 # View the file in interactive mode?
 interactive = True
@@ -76,4 +76,4 @@ if interactive == True:
 # Adjust the DPI to set the detail of the .png. Higher dpi files are considerably larger.
 # 1000 is a decent level of detail for <100,000 particles.
 elif save_file == True :
-    plt.savefig("../fig/" + file_in[8:-4] + ".png", dpi = 2000)
+    plt.savefig("../fig/" + file_in[8:-4] + ".png", dpi = 1000)
