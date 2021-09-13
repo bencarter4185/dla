@@ -29,6 +29,7 @@ pub struct InputParams {
     init_seed: usize,
     write_data: bool,
     write_tree: bool,
+    run_parallel: bool,
     write_g: bool,
 }
 
@@ -51,6 +52,8 @@ impl InputParams {
                 .expect("Failed to parse whether to write data to disk."),
             write_tree: parse_config_bool(&config, "options", "write_tree")
                 .expect("Failed to parse whether to plot tree."),
+            run_parallel: parse_config_bool(&config, "options", "run_parallel")
+                .expect("Failed to parse whether to run simulations in parallel."),
             write_g: parse_config_bool(&config, "fractals", "write_g_radius")
                 .expect("Failed to parse whether to write the gyration radius."),
         };
@@ -119,8 +122,8 @@ fn setup_tree_sims(params: &InputParams) -> Result<(), Box<dyn Error>> {
         &params.seeds
     ) {
         println!(
-            "Running sim for n={} a={} d_max={} max_seed={}",
-            n, a, d_max, max_seed
+            "Running sim for n={} a={} d_max={} max_seed={}, init_seed={}",
+            n, a, d_max, max_seed, params.init_seed,
         );
 
         let now: Instant = Instant::now();

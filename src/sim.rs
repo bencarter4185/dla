@@ -145,21 +145,31 @@ pub fn run_fractal(
     let seeds: Vec<usize> = (0..max_seed).collect_vec();
     let mut g_radius: f64 = 0.0;
 
+    if params.run_parallel == true {
+        let results: Vec<f64> = seeds
+            .par_iter()
+            .map(|seed| {
+                let g_radius = match do_sim(n, a, d_max, *seed, params) {
+                    Ok((_, _, _, g_radius)) => g_radius,
+                    Err(_) => panic!("Performing the simulation has failed!"),
+                };
+                g_radius
+            })
+            .collect();
 
-    let results: Vec<f64> = seeds
-        .par_iter()
-        .map(|seed| {
-            let g_radius = match do_sim(n, a, d_max, *seed, params) {
+        // Average over the ensemble
+        for i in 0..max_seed {
+            g_radius += results[i] / max_seed as f64;
+        }
+    } else {
+        for seed in seeds {
+            let g_r = match do_sim(n, a, d_max, seed, params) {
                 Ok((_, _, _, g_radius)) => g_radius,
                 Err(_) => panic!("Performing the simulation has failed!"),
             };
-            g_radius
-        })
-        .collect();
 
-    // Average over the ensemble
-    for i in 0..max_seed {
-        g_radius += results[i] / max_seed as f64;
+            g_radius += g_r / max_seed as f64;
+        }
     }
 
     Ok(g_radius)
@@ -568,9 +578,12 @@ fn check_collisions(
 
         // Situation 2: If one of the roots is 0.0, panic
         if root == 0.0 {
-            panic!(r"Error! This particle has already stuck!
+            panic!(
+                r"Error! This particle has already stuck!
 Error occured during simulation for n = {}, seed = {}.
-Error occured when adding particle i = {}", data.n, data.seed, i)
+Error occured when adding particle i = {}",
+                data.n, data.seed, i
+            )
         }
         // Situation 3 and 4, wrong direction or too far:
         else if root < 0.0 || root > data.l_min {
@@ -656,45 +669,6 @@ fn max_f32(a: f32, b: f32) -> f32 {
         b
     }
 }
-
-// fn plot_tree(data: &Data, x: f32, y: f32) {
-//     let mut xs: Vec<f32> = Vec::new();
-//     let mut ys: Vec<f32> = Vec::new();
-
-//     for particle in data.omega.iter() {
-//         let (x, y) = particle.1;
-
-//         xs.push(*x);
-//         ys.push(*y);
-//     }
-
-//     python! {
-//         import matplotlib.pyplot as plt
-//         from matplotlib.patches import Circle
-//         import numpy as np
-
-//         // Use seaborn for pretty graphs
-//         plt.style.use("seaborn")
-
-//         fig = plt.figure()
-
-//         // initialize axis, important: set the aspect ratio to equal
-//         ax = fig.add_subplot(111, aspect="equal")
-
-//         // define axis limits for all patches to show
-//         ax.axis([min('xs)-1., max('xs)+1., min('ys)-1., max('ys)+1.])
-
-//         for x, y in zip('xs, 'ys):
-//             ax.add_artist(Circle(xy=(x, y), radius=1, color="#555599"))
-
-//         // Hide axis
-//         plt.axis("off")
-
-//         plt.grid("off")
-
-//         plt.show()
-//     }
-// }
 
 fn cantor(k1: usize, k2: usize) -> usize {
     // Return a unique integer based on the two numbers
