@@ -540,22 +540,9 @@ fn check_collisions(
     // Keep a note of the smallest jump distance
     let mut lh: f32 = f32::MAX;
 
-    // Debug info
-    if i == 981317 {
-        println!("Current (x,y): ({}, {})", x, y);
-        println!("Alpha: {}", alpha);
-        println!("Particles to check: {:?}", particles);
-    }
-
     for particle in particles {
         let xp = particle.0 as f64;
         let yp = particle.1 as f64;
-
-        // Debug
-        if i == 981317 {
-            println!("(x, y): ({}, {})", x, y);
-            println!("(xp, yp): ({}, {})", xp, yp);
-        }
 
         // Define our variables for the quadratic solver
         a = 1.0;
@@ -589,20 +576,11 @@ fn check_collisions(
             }
         };
 
-        // Debug
-        if i == 981317 {
-            println!("Roots: {:?}", roots);
-            println!("");
-        }
-
         // Situation 2: If one of the roots is 0.0, panic
         if root == 0.0 {
-            panic!(
-                r"Error! This particle has already stuck!
-Error occured during simulation for n = {}, seed = {}.
-Error occured when adding particle i = {}",
-                data.n, data.seed, i
-            )
+            if root < lh {
+                lh = root
+            }
         }
         // Situation 3 and 4, wrong direction or too far:
         else if root < 0.0 || root > data.l_min {
