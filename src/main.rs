@@ -87,7 +87,7 @@ fn setup_fractal_sims(params: &InputParams) -> Result<(), Box<dyn Error>> {
     // Don't want to adjust this in config.
     let a: usize = 40001;
     let d_max: u8 = 90;
-    let max_seed: usize = 1;
+    let max_seed: usize = 1000;
 
     let mut g_radius: f64;
     let mut i: usize = 0;
