@@ -540,6 +540,14 @@ fn check_collisions(
     // Keep a note of the smallest jump distance
     let mut lh: f32 = f32::MAX;
 
+    // Debug info
+    if i == 981317 {
+        println!("Current (x,y): ({}, {})", x, y);
+        println!("Alpha: {}", alpha);
+        println!("Particles to check: {:?}", particles);
+        println!("");
+    }
+
     for particle in particles {
         let xp = particle.0 as f64;
         let yp = particle.1 as f64;
