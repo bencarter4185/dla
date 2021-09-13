@@ -63,7 +63,6 @@ pub struct Data {
     ix0_s: usize, // Index of origin for square of side s
     iy0_s: usize, // Index of origin for square of side s
     c: u8,        // Collision condition
-    seed: usize,
     // Arrays
     /* Omega: Off-lattice array of size n (number of particles) x 2 */
     omega: HashMap<usize, (f32, f32)>,
@@ -124,7 +123,6 @@ impl Data {
             ix0_s: ix0_s,
             iy0_s: iy0_s,
             c: c,
-            seed: seed,
             omega: HashMap::with_capacity(n),
             theta: generate_theta(d_max),
             psi: Array::from_elem((a, a), d_max),
@@ -377,7 +375,7 @@ fn launch_particles(data: &mut Data) {
                     // Possibility of collision on next step
                     // Get all the particles in upsilon in a square of size (2*c + 1) around the current x and y
                     let particles: Vec<(f32, f32)> = find_particles(data, x, y);
-                    let lh = check_collisions(data, particles, &mut x, &mut y, alpha, i);
+                    let lh = check_collisions(data, particles, &mut x, &mut y, alpha);
 
                     if lh != f32::MAX {
                         // Do the collision
@@ -522,7 +520,6 @@ fn check_collisions(
     x: &mut f32,
     y: &mut f32,
     alpha: f32,
-    i: usize,
 ) -> f32 {
     // Type convert all our variables to f64 to increase precision
     let x: f64 = *x as f64;
