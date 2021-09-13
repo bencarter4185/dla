@@ -90,7 +90,16 @@ fn setup_fractal_sims(params: &InputParams) -> Result<(), Box<dyn Error>> {
     let mut i: usize = 0;
 
     for n in n_particles.iter() {
+        let now: Instant = Instant::now();
         g_radius = sim::run_fractal(*n, a, d_max, max_seed, params)?;
+        let new_now: Instant = Instant::now();
+
+        println!(
+            r"Done! Total time for n = {} is {:?}
+                ", *n,
+            new_now.duration_since(now)
+        );
+
         g_radii[i] = g_radius;
         i += 1;
     }
@@ -114,9 +123,9 @@ fn setup_tree_sims(params: &InputParams) -> Result<(), Box<dyn Error>> {
             n, a, d_max, max_seed
         );
 
-        let now = Instant::now();
+        let now: Instant = Instant::now();
         sim::run(*n, *a, *d_max, *max_seed, &params)?;
-        let new_now = Instant::now();
+        let new_now: Instant = Instant::now();
         println!(
             r"Done! Total time = {:?}
                 ",
