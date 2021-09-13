@@ -22,11 +22,11 @@ pub fn check_folder_exists(folder: &String) -> Result<bool, Box<dyn Error>> {
 }
 
 pub fn write_g_radii(
-    params: &InputParams,
     n_particles: &Vec<usize>,
+    cpu_times: &Vec<f64>,
     g_radii: &Vec<f64>,
-    max_seed: usize,
-    d_max: u8
+    max_seeds: Vec<usize>,
+    d_maxs: Vec<u8>
 ) -> Result<(), Box<dyn Error>> {
     // Check if the `data` folder exists. If not, create it
     let folder: String = String::from("data");
@@ -39,7 +39,7 @@ pub fn write_g_radii(
 
     // Create filename
     let filepath = format!(
-        "./{}/g_radii_nmin{}_nmax{}_dmax{}_max_seed{}_iseed{}.csv", folder, n_min, n_max, d_max, max_seed, params.init_seed,
+        "./{}/g_radii_nmin{}_nmax{}.csv", folder, n_min, n_max
     );
 
     let mut wtr = csv::Writer::from_path(filepath)?;
@@ -47,9 +47,12 @@ pub fn write_g_radii(
     // Iterate through results and add to file
     for i in 0..n_particles.len() {
         let n: String = n_particles[i].to_string();
+        let cpu_time = cpu_times[i].to_string();
         let g_radius: String = g_radii[i].to_string();
+        let max_seed: String = max_seeds[i].to_string();
+        let d_max: String = d_maxs[i].to_string();
 
-        wtr.write_record([n, g_radius])?;
+        wtr.write_record([n, cpu_time, g_radius, max_seed, d_max])?;
     }
 
     Ok(())

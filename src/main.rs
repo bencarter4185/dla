@@ -29,7 +29,6 @@ pub struct InputParams {
     init_seed: usize,
     write_data: bool,
     write_tree: bool,
-    run_parallel: bool,
     write_g: bool,
 }
 
@@ -52,8 +51,6 @@ impl InputParams {
                 .expect("Failed to parse whether to write data to disk."),
             write_tree: parse_config_bool(&config, "options", "write_tree")
                 .expect("Failed to parse whether to plot tree."),
-            run_parallel: parse_config_bool(&config, "options", "run_parallel")
-                .expect("Failed to parse whether to run simulations in parallel."),
             write_g: parse_config_bool(&config, "fractals", "write_g_radius")
                 .expect("Failed to parse whether to write the gyration radius."),
         };
@@ -65,55 +62,64 @@ fn main() -> Result<(), Box<dyn Error>> {
     // Parse in the params from the `.ini` file.
     let params: InputParams = InputParams::new();
 
-    if params.write_g == false {
-        setup_tree_sims(&params)?
-    } else {
-        setup_fractal_sims(&params)?
-    }
+    // if params.write_g == false {
+    //     setup_tree_sims(&params)?
+    // } else {
+    //     setup_fractal_sims(&params)?
+    // }
+
+    setup_tree_sims(&params)?;
 
     Ok(())
 }
 
-fn setup_fractal_sims(params: &InputParams) -> Result<(), Box<dyn Error>> {
-    println!(r"Collecting gyration radii for particle numbers:
-{:?}
-", params.n_particles);
+// fn setup_fractal_sims(params: &InputParams) -> Result<(), Box<dyn Error>> {
+//     println!(r"Collecting gyration radii for particle numbers:
+// {:?}
+// ", params.n_particles);
     
-    // As we're collecting data across simulations, we have to collect the data here
-    let n_particles: Vec<usize> = params.n_particles.clone();
-    let mut g_radii: Vec<f64> = vec![0.0; n_particles.len()];
+//     // As we're collecting data across simulations, we have to collect the data here
+//     let n_particles: Vec<usize> = params.n_particles.clone();
+//     let mut g_radii: Vec<f64> = vec![0.0; n_particles.len()];
     
-    // Hard-coded to run for d_max = 90, seeds = 1000, array_size = 40001.
-    // Don't want to adjust this in config.
-    let a: usize = 40001;
-    let d_max: u8 = 90;
-    let max_seed: usize = 1000;
+//     // Hard-coded to run for d_max = 90, seeds = 1000, array_size = 40001.
+//     // Don't want to adjust this in config.
+//     let a: usize = 40001;
+//     let d_max: u8 = 90;
+//     let max_seed: usize = 1000;
 
-    let mut g_radius: f64;
-    let mut i: usize = 0;
+//     let mut g_radius: f64;
+//     let mut i: usize = 0;
 
-    for n in n_particles.iter() {
-        let now: Instant = Instant::now();
-        g_radius = sim::run_fractal(*n, a, d_max, max_seed, params)?;
-        let new_now: Instant = Instant::now();
+//     for n in n_particles.iter() {
+//         let now: Instant = Instant::now();
+//         g_radius = sim::run_fractal(*n, a, d_max, max_seed, params)?;
+//         let new_now: Instant = Instant::now();
 
-        println!(
-            r"Done! Total time for n = {} is {:?}
-                ", *n,
-            new_now.duration_since(now)
-        );
+//         println!(
+//             r"Done! Total time for n = {} is {:?}
+//                 ", *n,
+//             new_now.duration_since(now)
+//         );
 
-        g_radii[i] = g_radius;
-        i += 1;
-    }
+//         g_radii[i] = g_radius;
+//         i += 1;
+//     }
 
-    // Now we've collected our data, we can save to disk
-    write_g_radii(params, &n_particles, &g_radii, max_seed, d_max)?;
+//     // Now we've collected our data, we can save to disk
+//     write_g_radii(params, &n_particles, &g_radii, max_seed, d_max)?;
 
-    Ok(())
-}
+//     Ok(())
+// }
 
 fn setup_tree_sims(params: &InputParams) -> Result<(), Box<dyn Error>> {
+    // Generate output vectors for cpu runtime and average radius
+    let mut particles: Vec<usize> = Vec::new();
+    let mut cpu_times: Vec<f64> = Vec::new();
+    let mut r_avgs: Vec<f64> = Vec::new();
+    let mut max_seeds: Vec<usize> = Vec::new();
+    let mut d_maxs: Vec<u8> = Vec::new();
+
     // Iterate through the params provided and run simulations
     for (n, a, d_max, max_seed) in iproduct!(
         &params.n_particles,
@@ -127,13 +133,24 @@ fn setup_tree_sims(params: &InputParams) -> Result<(), Box<dyn Error>> {
         );
 
         let now: Instant = Instant::now();
-        sim::run(*n, *a, *d_max, *max_seed, &params)?;
+        let (cpu_time, r_avg) = sim::run(*n, *a, *d_max, *max_seed, &params)?;
         let new_now: Instant = Instant::now();
         println!(
             r"Done! Total time = {:?}
                 ",
             new_now.duration_since(now)
         );
+
+        // Add results to vectors
+        particles.push(*n);
+        cpu_times.push(cpu_time);
+        r_avgs.push(r_avg);
+        max_seeds.push(*max_seed);
+        d_maxs.push(*d_max);
+    }
+
+    if params.write_g == true {
+        write_g_radii( &particles, &cpu_times, &r_avgs, max_seeds, d_maxs)?;
     }
 
     Ok(())
