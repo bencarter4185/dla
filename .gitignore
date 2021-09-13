@@ -21,3 +21,7 @@
 /fig/*
 !/fig/tree_n100_dmax90_seed0_iseed0.png
 !/fig/tree_n100000_dmax90_seed0_iseed0.png
+
+# Ignore python scripts except the ones I specify
+/py/*
+!/py/plot_tree.py

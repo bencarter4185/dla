@@ -12,15 +12,15 @@ import numpy as np
 # USER PARAMS
 
 # Specify input filepath here (hard-coded)
-file_in = "../data/tree_n100_dmax90_seed0_iseed0.csv"
+file_in = "../data/tree_n100000_dmax90_seed0_iseed0.csv"
 
 # View the file in interactive mode?
-interactive = True
+interactive = False
 
 # Save the file to disk?
 # N.B. looking at the plot interactively will break the exported plot.
 # The script will check to ensure interactive mode is off before saving.
-save_file = False
+save_file = True
 ########################################################################################
 
 # Load data

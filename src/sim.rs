@@ -6,6 +6,10 @@ Library file used to run DLA simulations.
 Imports
 */
 
+use itertools::iproduct;
+
+use rayon::prelude::*;
+
 use std::error::Error;
 
 mod writer;
@@ -19,7 +23,13 @@ use math::round::floor;
 
 use kurbo::common::solve_quadratic as quad;
 
-use crate::{InputParams, sim::{random::Ran2Generator, writer::write_tree}};
+use crate::{
+    sim::{
+        random::Ran2Generator,
+        writer::{write_data, write_tree},
+    },
+    InputParams,
+};
 
 mod random;
 
@@ -123,115 +133,146 @@ impl Data {
     }
 }
 
-pub fn run(n: usize, a: usize, d_max: u8, max_seed: usize, params: &InputParams) -> Result<(), Box<dyn Error>> {
-    let seeds = 0..max_seed;
+pub fn run(
+    n: usize,
+    a: usize,
+    d_max: u8,
+    max_seed: usize,
+    params: &InputParams,
+) -> Result<(), Box<dyn Error>> {
+    let seeds = (0..max_seed).collect_vec();
 
-    for seed in seeds {
-        // Create new struct of the data in this simulation
-        let mut data: Data = Data::new(n, a, d_max, seed, params);
+    let results_len = generate_timestep(a);
 
-        // Temporarily store the origin as local variables
-        let x0: f32 = data.x0;
-        let y0: f32 = data.y0;
+    let results: Vec<(Vec<f64>, Vec<f64>)> = seeds
+        .par_iter()
+        .map(|seed| {
+            let (radii, n_tree) = match do_sim(n, a, d_max, *seed, params) {
+                Ok((radii, n_tree, _)) => (radii, n_tree),
+                Err(_) => panic!("Performing the simulation has failed!"),
+            };
+            (radii, n_tree)
+        })
+        .collect();
 
-        // Add seed particle at origin
-        data.omega.insert(cantor(data.ix0_a, data.iy0_a), (x0, y0));
-        overlap_psi_theta(&mut data, x0, y0);
+    // Need to work out ensemble averages
+    // Generate vectors to store ensemble averages
+    let mut radii: Vec<f64> = vec![0.0; results_len];
+    let mut n_tree: Vec<f64> = vec![0.0; results_len];
 
-        // Calculate `cpu time` (kind of)
-        let now = Instant::now();
+    // Don't need to average radius, so can do it in its own loop
+    for j in 0..results_len {
+        radii[j] += results[0].0[j];
+    }
 
-        /* We have generated the arrays, so can now perform a simulation */
-        launch_particles(&mut data);
+    // Average across the ensemble
+    for (i, j) in iproduct!(0..max_seed as usize, 0..results_len) {
+        n_tree[j] += results[i].1[j] / max_seed as f64;
+    }
 
-        let new_now = Instant::now();
-        println!(r"Computation time = {:?}", new_now.duration_since(now));
-
-        /* Finished depositing. Now need to calculate values to write to disk */
-
-        // Added particles
-        if params.write_tree == true {
-            write_tree(&data, params, seed)?;
-        }
-
-        // Not writing data to .csv yet
-
-        if params.write_data == true {
-            count_tree(&data)
-        }
+    if params.write_data == true {
+        write_data(n, params, radii, n_tree, max_seed)?;
     }
 
     Ok(())
 }
 
-fn count_tree(data: &Data) {
-    // Generate empty vectors to store results
-    let max_radius: usize = (data.a - 1) / 2;
+fn do_sim(
+    n: usize,
+    a: usize,
+    d_max: u8,
+    seed: usize,
+    params: &InputParams,
+) -> Result<(Vec<f64>, Vec<f64>, u128), Box<dyn Error>> {
+    // Create new struct of the data in this simulation
+    let mut data: Data = Data::new(n, a, d_max, seed, params);
 
-    let radii: Vec<usize> = (1..max_radius).collect_vec();
+    // Temporarily store the origin as local variables
+    let x0: f32 = data.x0;
+    let y0: f32 = data.y0;
 
-    let mut n_tree_vec: Vec<usize> = vec![0; radii.len()];
-    let mut i: usize = 0;
+    // Add seed particle at origin
+    data.omega.insert(cantor(data.ix0_a, data.iy0_a), (x0, y0));
+    overlap_psi_theta(&mut data, x0, y0);
 
-    let mut x2: f32;
-    let mut y2: f32;
-    let mut r2: f32;
+    // Calculate `cpu time` (kind of)
+    let now = Instant::now();
 
-    let mut reached_max: bool = false;
+    /* We have generated the arrays, so can now perform a simulation */
+    launch_particles(&mut data);
 
-    // Add up all the blocks
-    for r in radii.iter() {
-        if reached_max == true {
-            n_tree_vec[i] = data.n;
-            i += 1;
-            continue;
-        }
+    let cpu_time = Instant::now().duration_since(now).as_millis();
 
-        // Type convert r to float
-        let r: f32 = *r as f32;
-
-        let mut x: f32 = 0.0 - r;
-        let mut y: f32;
-
-        let mut n_tree: usize = 0; // Number of points in the circle of radius r
-
-        while x <= r {
-            // Reset y
-            y = 0.0 - r;
-            x2 = x.powi(2);
-            r2 = r.powi(2);
-
-            while y <= r {
-                let (xi, yi) = get_array_index(x, y, data.a);
-
-                y2 = y.powi(2);
-
-                if x2 + y2 < r2 {
-                    // Square is inside the circle. Check if there is a tree or empty
-                    if data.psi[[xi, yi]] == 0 {
-                        n_tree += 1;
-                    }
-                }
-                y += 1.0;
-            }
-            x += 1.0;
-        }
-
-        if n_tree == data.n && reached_max == false {
-            println!(
-                r"Checked radius {}
-        Number of points in tree: {}",
-                r, n_tree
-            );
-            reached_max = true;
-        }
-
-        n_tree_vec[i] = n_tree;
-
-        i += 1;
+    // If asked, write this tree to disk
+    if params.write_tree == true {
+        write_tree(&data, params, seed)?;
     }
 
-    println!("{:?}", n_tree_vec)
+    let (radii, n_tree) = count_tree(&data);
+
+    Ok((radii, n_tree, cpu_time))
+}
+
+fn generate_timestep(a: usize) -> usize {
+    // Generate empty vectors to store results
+    let max_radius: f64 = (a as f64 - 1.0) / 2.0;
+
+    let mut r: f64 = 8.0;
+    let mut r_points: usize = 0;
+    while r < max_radius {
+        // Perform a logarithmic timestep
+        let n: f64 = r / 100.0 + 0.1;
+        r += n as f64;
+        r_points += 1;
+    }
+
+    r_points
+}
+
+fn count_tree(data: &Data) -> (Vec<f64>, Vec<f64>) {
+    // Generate empty vectors to store results
+    let max_radius: f64 = (data.a as f64 - 1.0) / 2.0;
+
+    let mut radii: Vec<f64> = Vec::new();
+
+    let mut r: f64 = 8.0;
+    let mut r_points: usize = 0;
+    while r < max_radius {
+        // Perform a logarithmic timestep
+        let n: f64 = r / 100.0 + 0.1;
+        r += n as f64;
+        r_points += 1;
+        radii.push(r)
+    }
+    
+    let mut n_tree: Vec<f64> = vec![0.0; r_points];
+    
+    let mut x: f64;
+    let mut y: f64;
+    let mut r: f64;
+
+    for particle in &data.omega {
+        x = particle.1.0 as f64;
+        y = particle.1.1 as f64;
+        r = (x.powi(2) + y.powi(2)).sqrt();
+
+        let mut i: usize = r_points - 1;
+
+        loop {
+            if r < radii[i] {
+                n_tree[i] += 1.0;
+            } else {
+                break;
+            }
+
+            if i == 0 {
+                break;
+            }
+
+            i -= 1;
+        }
+    }
+    (radii, n_tree)
 }
 
 fn calc_rg(data: &mut Data) -> f32 {
@@ -246,7 +287,7 @@ fn launch_particles(data: &mut Data) {
     */
 
     let mut i: usize = 2; // First particle to stick will be i = 2
-    while i <= data.n + 1 {
+    while i <= data.n {
         // Generate new particle
         let mut alpha: f32 = next_angle(&mut data.rng);
         let mut x: f32 = data.r_g * alpha.cos(); // x coordinate of particle

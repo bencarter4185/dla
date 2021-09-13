@@ -21,6 +21,32 @@ pub fn check_folder_exists(folder: &String) -> Result<bool, Box<dyn Error>> {
     Ok(folder_exists)
 }
 
+pub fn write_data(n:usize, params: &InputParams, radii: Vec<f64>, n_tree: Vec<f64>, max_seed: usize) -> Result<(), Box<dyn Error>> {
+    // Check if the `data` folder exists. If not, create it
+    let folder: String = String::from("data");
+    if !(check_folder_exists(&folder)?) {
+        fs::create_dir(&folder)?
+    }
+
+    // Create a filename based on input parameters
+    let filepath = format!(
+        "./{}/data_n{}_seeds{}_iseed{}.csv",
+        folder, n, max_seed, params.init_seed
+    );
+
+    let mut wtr = csv::Writer::from_path(filepath)?;
+
+    // Iterate through data and write to file
+    for i in 0..radii.len() {
+        let radius: String = radii[i].to_string();
+        let n: String = n_tree[i].to_string();
+        
+        wtr.write_record([radius, n])?;
+    }
+
+    Ok(())
+}
+
 pub fn write_tree(data: &Data, params: &InputParams, seed: usize) -> Result<(), Box<dyn Error>> {
     // Check if the `data` folder exists. If not, create it
     let folder: String = String::from("data");
