@@ -21,7 +21,48 @@ pub fn check_folder_exists(folder: &String) -> Result<bool, Box<dyn Error>> {
     Ok(folder_exists)
 }
 
-pub fn write_data(n:usize, params: &InputParams, radii: Vec<f64>, n_tree: Vec<f64>, max_seed: usize) -> Result<(), Box<dyn Error>> {
+pub fn write_g_radii(
+    params: &InputParams,
+    n_particles: &Vec<usize>,
+    g_radii: &Vec<f64>,
+    max_seed: usize,
+    d_max: u8
+) -> Result<(), Box<dyn Error>> {
+    // Check if the `data` folder exists. If not, create it
+    let folder: String = String::from("data");
+    if !(check_folder_exists(&folder)?) {
+        fs::create_dir(&folder)?
+    }
+
+    let n_min: usize = *n_particles.iter().min().unwrap();
+    let n_max: usize = *n_particles.iter().max().unwrap();
+
+    // Create filename
+    let filepath = format!(
+        "./{}/g_radii_nmin{}_nmax{}_dmax{}_max_seed{}_iseed{}.csv", folder, n_min, n_max, d_max, max_seed, params.init_seed,
+    );
+
+    let mut wtr = csv::Writer::from_path(filepath)?;
+
+    // Iterate through results and add to file
+    for i in 0..n_particles.len() {
+        let n: String = n_particles[i].to_string();
+        let g_radius: String = g_radii[i].to_string();
+
+        wtr.write_record([n, g_radius])?;
+    }
+
+    Ok(())
+}
+
+pub fn write_data(
+    n: usize,
+    params: &InputParams,
+    radii: Vec<f64>,
+    n_tree: Vec<f64>,
+    max_seed: usize,
+    d_max: u8,
+) -> Result<(), Box<dyn Error>> {
     // Check if the `data` folder exists. If not, create it
     let folder: String = String::from("data");
     if !(check_folder_exists(&folder)?) {
@@ -30,8 +71,8 @@ pub fn write_data(n:usize, params: &InputParams, radii: Vec<f64>, n_tree: Vec<f6
 
     // Create a filename based on input parameters
     let filepath = format!(
-        "./{}/data_n{}_seeds{}_iseed{}.csv",
-        folder, n, max_seed, params.init_seed
+        "./{}/data_n{}_dmax{}_seeds{}_iseed{}.csv",
+        folder, n, d_max, max_seed, params.init_seed
     );
 
     let mut wtr = csv::Writer::from_path(filepath)?;
@@ -40,7 +81,7 @@ pub fn write_data(n:usize, params: &InputParams, radii: Vec<f64>, n_tree: Vec<f6
     for i in 0..radii.len() {
         let radius: String = radii[i].to_string();
         let n: String = n_tree[i].to_string();
-        
+
         wtr.write_record([radius, n])?;
     }
 
@@ -56,12 +97,13 @@ pub fn write_tree(data: &Data, params: &InputParams, seed: usize) -> Result<(), 
 
     // Create a filename based on input parameters
     let filepath = format!(
-        "./{}/tree_n{}_dmax{}_seed{}_iseed{}.csv", folder, data.n, data.d_max, seed, params.init_seed
+        "./{}/tree_n{}_dmax{}_seed{}_iseed{}.csv",
+        folder, data.n, data.d_max, seed, params.init_seed
     );
 
     let mut wtr = csv::Writer::from_path(filepath)?;
 
-    // Iterate through Omega 
+    // Iterate through Omega
     for item in &data.omega {
         let x: String = item.1.0.to_string();
         let y: String = item.1.1.to_string();

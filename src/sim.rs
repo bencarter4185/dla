@@ -12,7 +12,7 @@ use rayon::prelude::*;
 
 use std::error::Error;
 
-mod writer;
+pub(crate) mod writer;
 
 use std::time::Instant;
 
@@ -133,6 +133,36 @@ impl Data {
     }
 }
 
+pub fn run_fractal(
+    n: usize,
+    a: usize,
+    d_max: u8,
+    max_seed: usize,
+    params: &InputParams,
+) -> Result<f64, Box<dyn Error>> {
+    let seeds: Vec<usize> = (0..max_seed).collect_vec();
+    let mut g_radius: f64 = 0.0;
+
+
+    let results: Vec<f64> = seeds
+        .par_iter()
+        .map(|seed| {
+            let g_radius = match do_sim(n, a, d_max, *seed, params) {
+                Ok((_, _, _, g_radius)) => g_radius,
+                Err(_) => panic!("Performing the simulation has failed!"),
+            };
+            g_radius
+        })
+        .collect();
+
+    // Average over the ensemble
+    for i in 0..max_seed {
+        g_radius += results[i] / max_seed as f64;
+    }
+
+    Ok(g_radius)
+}
+
 pub fn run(
     n: usize,
     a: usize,
@@ -148,7 +178,7 @@ pub fn run(
         .par_iter()
         .map(|seed| {
             let (radii, n_tree) = match do_sim(n, a, d_max, *seed, params) {
-                Ok((radii, n_tree, _)) => (radii, n_tree),
+                Ok((radii, n_tree, _, _)) => (radii, n_tree),
                 Err(_) => panic!("Performing the simulation has failed!"),
             };
             (radii, n_tree)
@@ -171,7 +201,7 @@ pub fn run(
     }
 
     if params.write_data == true {
-        write_data(n, params, radii, n_tree, max_seed)?;
+        write_data(n, params, radii, n_tree, max_seed, d_max)?;
     }
 
     Ok(())
@@ -183,7 +213,7 @@ fn do_sim(
     d_max: u8,
     seed: usize,
     params: &InputParams,
-) -> Result<(Vec<f64>, Vec<f64>, u128), Box<dyn Error>> {
+) -> Result<(Vec<f64>, Vec<f64>, u128, f64), Box<dyn Error>> {
     // Create new struct of the data in this simulation
     let mut data: Data = Data::new(n, a, d_max, seed, params);
 
@@ -208,9 +238,9 @@ fn do_sim(
         write_tree(&data, params, seed)?;
     }
 
-    let (radii, n_tree) = count_tree(&data);
+    let (radii, n_tree, r_avg) = count_tree(&data);
 
-    Ok((radii, n_tree, cpu_time))
+    Ok((radii, n_tree, cpu_time, r_avg))
 }
 
 fn generate_timestep(a: usize) -> usize {
@@ -229,7 +259,7 @@ fn generate_timestep(a: usize) -> usize {
     r_points
 }
 
-fn count_tree(data: &Data) -> (Vec<f64>, Vec<f64>) {
+fn count_tree(data: &Data) -> (Vec<f64>, Vec<f64>, f64) {
     // Generate empty vectors to store results
     let max_radius: f64 = (data.a as f64 - 1.0) / 2.0;
 
@@ -244,17 +274,21 @@ fn count_tree(data: &Data) -> (Vec<f64>, Vec<f64>) {
         r_points += 1;
         radii.push(r)
     }
-    
+
     let mut n_tree: Vec<f64> = vec![0.0; r_points];
-    
+
     let mut x: f64;
     let mut y: f64;
     let mut r: f64;
 
+    let mut r_tot: f64 = 0.0;
+
     for particle in &data.omega {
-        x = particle.1.0 as f64;
-        y = particle.1.1 as f64;
+        x = particle.1 .0 as f64;
+        y = particle.1 .1 as f64;
         r = (x.powi(2) + y.powi(2)).sqrt();
+
+        r_tot += r;
 
         let mut i: usize = r_points - 1;
 
@@ -272,12 +306,15 @@ fn count_tree(data: &Data) -> (Vec<f64>, Vec<f64>) {
             i -= 1;
         }
     }
-    (radii, n_tree)
+
+    let r_avg: f64 = r_tot / data.n as f64;
+
+    (radii, n_tree, r_avg)
 }
 
 fn calc_rg(data: &mut Data) -> f32 {
     // Calculate the new generation radius
-    data.r_max * 1.1 as f32 + data.rp * 2.0
+    data.r_max * 2.0 as f32 + data.rp * 2.0
 }
 
 fn launch_particles(data: &mut Data) {
