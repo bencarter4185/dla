@@ -551,6 +551,12 @@ fn check_collisions(
         let xp = particle.0 as f64;
         let yp = particle.1 as f64;
 
+        // Debug
+        if i == 981317 {
+            println!("(x, y): ({}, {})", x, y);
+            println!("(xp, yp): ({}, {})", xp, yp);
+        }
+
         // Define our variables for the quadratic solver
         a = 1.0;
         b = 2.0 * (alpha.cos() * (x - xp) + alpha.sin() * (y - yp));
