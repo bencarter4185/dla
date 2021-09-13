@@ -25,3 +25,4 @@
 # Ignore python scripts except the ones I specify
 /py/*
 !/py/plot_tree.py
+!/py/time_analysis.ipynb
