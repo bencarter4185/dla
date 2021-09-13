@@ -545,7 +545,6 @@ fn check_collisions(
         println!("Current (x,y): ({}, {})", x, y);
         println!("Alpha: {}", alpha);
         println!("Particles to check: {:?}", particles);
-        println!("");
     }
 
     for particle in particles {
@@ -583,6 +582,12 @@ fn check_collisions(
                 continue;
             }
         };
+
+        // Debug
+        if i == 981317 {
+            println!("Roots: {:?}", roots);
+            println!("");
+        }
 
         // Situation 2: If one of the roots is 0.0, panic
         if root == 0.0 {
