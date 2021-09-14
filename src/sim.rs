@@ -12,7 +12,7 @@ pub(crate) mod writer;
 
 use std::time::Instant;
 
-use itertools::{Itertools, iproduct};
+use itertools::{iproduct, Itertools};
 use ndarray::{Array, ArrayBase, Dim, OwnedRepr};
 
 use math::round::floor;
@@ -204,6 +204,9 @@ pub fn run_parallel(
         .map(|seed| {
             // Define data to be passed in and around these simulations
             let mut data: Data = Data::new(n, a, d_max, params.init_seed, params);
+
+            // Reset the items in data
+            reset_data(&mut data, params, *seed);
 
             // Calculate `cpu time`
             let now = Instant::now();
