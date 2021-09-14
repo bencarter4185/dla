@@ -32,11 +32,28 @@ pub struct InputParams {
     write_data: bool,
     write_tree: bool,
     write_g: bool,
+    parallel: u8,
 }
 
 impl InputParams {
     fn new() -> InputParams {
         let config = open_config(CFG).expect("Failed to open config file.");
+
+        let sim_parallel: u8 = parse_config_bool(&config, "parallelisation", "sim_parallel")
+            .expect("Failed to parse whether to run sim in parallel.")
+            as u8;
+        let seed_parallel: u8 = parse_config_bool(&config, "parallelisation", "seed_parallel")
+            .expect("Failed to parse whether to run seeds in parallel.")
+            as u8
+            * 2;
+
+        let parallel = sim_parallel + seed_parallel;
+
+        match parallel {
+            0..=2 => (),
+            3 => panic!("Sim parallel and seed parallel cannot both be true!"),
+            _ => panic!("Sim parallel and seed parallel is malformed!"),
+        };
 
         let params: InputParams = InputParams {
             n_particles: parse_config_array(&config, "simulation_params", "n_particles")
@@ -47,14 +64,15 @@ impl InputParams {
                 .expect("Failed to parse d_max values."),
             seeds: parse_config_array(&config, "simulation_params", "seeds")
                 .expect("Failed to parse seeds."),
-            init_seed: parse_config_int(&config, "options", "init_seed")
+            init_seed: parse_config_int(&config, "misc_options", "init_seed")
                 .expect("Failed to parse initial random number seed."),
-            write_data: parse_config_bool(&config, "options", "write_data")
+            write_data: parse_config_bool(&config, "misc_options", "write_data")
                 .expect("Failed to parse whether to write data to disk."),
-            write_tree: parse_config_bool(&config, "options", "write_tree")
+            write_tree: parse_config_bool(&config, "misc_options", "write_tree")
                 .expect("Failed to parse whether to plot tree."),
-            write_g: parse_config_bool(&config, "fractals", "write_g_radius")
+            write_g: parse_config_bool(&config, "misc_options", "write_g_radius")
                 .expect("Failed to parse whether to write the gyration radius."),
+            parallel: parallel,
         };
         params
     }
@@ -64,6 +82,77 @@ fn main() -> Result<(), Box<dyn Error>> {
     // Parse in the params from the `.ini` file.
     let params: InputParams = InputParams::new();
 
+    // Run parallel sims if asked to, else run single-threaded
+    match params.parallel {
+        1 => setup_parallel(&params)?,
+        _ => setup(&params)?,
+    }
+
+    Ok(())
+}
+
+fn setup(params: &InputParams) -> Result<(), Box<dyn Error>> {
+    let mut sim_params: Vec<(usize, usize, u8, usize)> = Vec::new();
+
+    for (n, a, d_max, max_seed) in iproduct!(
+        &params.n_particles,
+        &params.array_sizes,
+        &params.d_max_vals,
+        &params.seeds
+    ) {
+        sim_params.push((*n, *a, *d_max, *max_seed))
+    }
+    
+    let results: Vec<(usize, f64, f64, usize, u8)> = sim_params
+        .iter()
+        .map(|(n, a, d_max, max_seed)| {
+            let now: Instant = Instant::now();
+            
+            let mut cpu_time: f64 = 0.0;
+            let mut r_avg: f64 = 0.0;
+            
+            if params.parallel == 2 {
+                let (cpu_time_i, r_avg_i) = match sim::run_parallel(*n, *a, *d_max, *max_seed, &params) {
+                    Ok((cpu_time_i, r_avg_i)) => (cpu_time_i, r_avg_i),
+                    Err(_) => panic!("Performing the simulation has failed!"),
+                };
+                cpu_time += cpu_time_i;
+                r_avg += r_avg_i;
+            } else {
+                let (cpu_time_i, r_avg_i) = match sim::run(*n, *a, *d_max, *max_seed, &params) {
+                    Ok((cpu_time_i, r_avg_i)) => (cpu_time_i, r_avg_i),
+                    Err(_) => panic!("Performing the simulation has failed!"),
+                };
+                cpu_time += cpu_time_i;
+                r_avg += r_avg_i;
+            }
+            
+
+            let new_now: Instant = Instant::now();
+            println!(
+                r"Sim for n={} a={} d_max={} max_seed={}, init_seed={},
+Complete in {:?}
+",
+                n,
+                a,
+                d_max,
+                max_seed,
+                params.init_seed,
+                new_now.duration_since(now)
+            );
+
+            (*n, cpu_time, r_avg, *max_seed, *d_max)
+        })
+        .collect();
+
+    if params.write_g == true {
+        write_g_radii(&results)?;
+    }
+
+    Ok(())
+}
+
+fn setup_parallel(params: &InputParams) -> Result<(), Box<dyn Error>> {
     let mut sim_params: Vec<(usize, usize, u8, usize)> = Vec::new();
 
     for (n, a, d_max, max_seed) in iproduct!(
@@ -75,6 +164,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         sim_params.push((*n, *a, *d_max, *max_seed))
     }
 
+    // Doesn't check for the option to run the seeds in parallel,
+    //  since we're already running the sims in parallel
     let results: Vec<(usize, f64, f64, usize, u8)> = sim_params
         .par_iter()
         .map(|(n, a, d_max, max_seed)| {

@@ -12,12 +12,13 @@ pub(crate) mod writer;
 
 use std::time::Instant;
 
-use itertools::Itertools;
+use itertools::{Itertools, iproduct};
 use ndarray::{Array, ArrayBase, Dim, OwnedRepr};
 
 use math::round::floor;
 
 use kurbo::common::solve_quadratic as quad;
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 
 use crate::{
     sim::{
@@ -129,46 +130,6 @@ impl Data {
     }
 }
 
-// pub fn run_fractal(
-//     n: usize,
-//     a: usize,
-//     d_max: u8,
-//     max_seed: usize,
-//     params: &InputParams,
-// ) -> Result<f64, Box<dyn Error>> {
-//     let seeds: Vec<usize> = (0..max_seed).collect_vec();
-//     let mut g_radius: f64 = 0.0;
-
-//     if params.run_parallel == true {
-//         let results: Vec<f64> = seeds
-//             .par_iter()
-//             .map(|seed| {
-//                 let g_radius = match do_sim(n, a, d_max, *seed, params) {
-//                     Ok((_, _, _, g_radius)) => g_radius,
-//                     Err(_) => panic!("Performing the simulation has failed!"),
-//                 };
-//                 g_radius
-//             })
-//             .collect();
-
-//         // Average over the ensemble
-//         for i in 0..max_seed {
-//             g_radius += results[i] / max_seed as f64;
-//         }
-//     } else {
-//         for seed in seeds {
-//             let g_r = match do_sim(n, a, d_max, seed, params) {
-//                 Ok((_, _, _, g_radius)) => g_radius,
-//                 Err(_) => panic!("Performing the simulation has failed!"),
-//             };
-
-//             g_radius += g_r / max_seed as f64;
-//         }
-//     }
-
-//     Ok(g_radius)
-// }
-
 pub fn run(
     n: usize,
     a: usize,
@@ -190,9 +151,9 @@ pub fn run(
     // Iterate over the random number seed
     for seed in seeds.iter() {
         // Reset the items in data
-        reset_data(&mut data);
+        reset_data(&mut data, params, *seed);
 
-        // Calculate `cpu time` (kind of)
+        // Calculate `cpu time`
         let now = Instant::now();
 
         /* We have generated the arrays, so can now perform a simulation */
@@ -214,6 +175,72 @@ pub fn run(
         }
         cpu_time += cpu_time_i / max_seed as f64;
         r_avg += r_avg_i / max_seed as f64;
+    }
+
+    if params.write_data == true {
+        write_data(n, params, radii, n_tree, max_seed, d_max)?;
+    }
+
+    Ok((cpu_time, r_avg))
+}
+
+pub fn run_parallel(
+    n: usize,
+    a: usize,
+    d_max: u8,
+    max_seed: usize,
+    params: &InputParams,
+) -> Result<(f64, f64), Box<dyn Error>> {
+    let seeds: Vec<usize> = (0..max_seed).collect_vec();
+    let results_len: usize = generate_timestep(a);
+
+    let mut radii: Vec<f64> = vec![0.0; results_len];
+    let mut n_tree: Vec<f64> = vec![0.0; results_len];
+    let mut cpu_time: f64 = 0.0;
+    let mut r_avg: f64 = 0.0;
+
+    let results: Vec<(Vec<f64>, Vec<f64>, f64, f64)> = seeds
+        .par_iter()
+        .map(|seed| {
+            // Define data to be passed in and around these simulations
+            let mut data: Data = Data::new(n, a, d_max, params.init_seed, params);
+
+            // Calculate `cpu time`
+            let now = Instant::now();
+
+            /* We have generated the arrays, so can now perform a simulation */
+            launch_particles(&mut data);
+
+            let cpu_time_i: f64 = Instant::now().duration_since(now).as_millis() as f64;
+
+            // If asked, write this tree to disk
+            if params.write_tree == true {
+                match write_tree(&data, params, *seed) {
+                    Ok(_) => (),
+                    Err(_) => panic!("Writing to csv has failed!"),
+                };
+            }
+
+            let (radii_i, n_tree_i, r_avg_i) = count_tree(&data);
+
+            (radii_i, n_tree_i, cpu_time_i, r_avg_i)
+        })
+        .collect();
+
+    // Don't need to average radius, so can do it in its own loop
+    for j in 0..results_len {
+        radii[j] += results[0].0[j];
+    }
+
+    // Average across the ensemble
+    for (i, j) in iproduct!(0..max_seed as usize, 0..results_len) {
+        n_tree[j] += results[i].1[j] / max_seed as f64;
+    }
+
+    // Average cpu_time and r_avg across seeds
+    for i in 0..max_seed {
+        cpu_time += results[i].2 / max_seed as f64;
+        r_avg += results[i].3 / max_seed as f64;
     }
 
     if params.write_data == true {
@@ -292,7 +319,7 @@ fn count_tree(data: &Data) -> (Vec<f64>, Vec<f64>, f64) {
     (radii, n_tree, r_avg)
 }
 
-fn reset_data(data: &mut Data) {
+fn reset_data(data: &mut Data, params: &InputParams, seed: usize) {
     // Temporarily store the origin as local variables
     let x0: f32 = data.x0;
     let y0: f32 = data.y0;
@@ -303,12 +330,26 @@ fn reset_data(data: &mut Data) {
     // Theta doesn't need resetting, so skip
 
     // Replace values in Psi with d_max
-    data.psi.fill(data.d_max); 
+    data.psi.fill(data.d_max);
 
     // Add seed particle at origin
     data.omega.insert(cantor(data.ix0_a, data.iy0_a), (x0, y0));
     overlap_psi_theta(data, x0, y0);
 
+    // Redefine random number generator
+    let idum: i32 = -1 * (params.init_seed + seed) as i32;
+
+    data.rng = Ran2Generator::new(idum);
+
+    // Warm up random number generator
+    for _ in 0..100 {
+        data.rng.next();
+    }
+
+    // Reset radii variables
+    data.r_kill = 5.0;
+    data.r_max = 1.0;
+    data.r_g = 3.0;
 }
 
 fn calc_rg(data: &mut Data) -> f32 {
