@@ -21,36 +21,34 @@ pub fn check_folder_exists(folder: &String) -> Result<bool, Box<dyn Error>> {
     Ok(folder_exists)
 }
 
-pub fn write_g_radii(
-    n_particles: &Vec<usize>,
-    cpu_times: &Vec<f64>,
-    g_radii: &Vec<f64>,
-    max_seeds: Vec<usize>,
-    d_maxs: Vec<u8>
-) -> Result<(), Box<dyn Error>> {
+pub fn write_g_radii(results: &Vec<(usize, f64, f64, usize, u8)>) -> Result<(), Box<dyn Error>> {
     // Check if the `data` folder exists. If not, create it
     let folder: String = String::from("data");
     if !(check_folder_exists(&folder)?) {
         fs::create_dir(&folder)?
     }
 
-    let n_min: usize = *n_particles.iter().min().unwrap();
-    let n_max: usize = *n_particles.iter().max().unwrap();
+    // Get max and min n_particles
+    let mut n_min: usize = usize::MAX;
+    let mut n_max: usize = 0;
+
+    for result in results {
+        n_min = if result.0 < n_min { result.0 } else { n_min };
+        n_max = if result.0 > n_max { result.0 } else { n_max };
+    }
 
     // Create filename
-    let filepath = format!(
-        "./{}/g_radii_nmin{}_nmax{}.csv", folder, n_min, n_max
-    );
+    let filepath = format!("./{}/g_radii_nmin{}_nmax{}.csv", folder, n_min, n_max);
 
     let mut wtr = csv::Writer::from_path(filepath)?;
 
     // Iterate through results and add to file
-    for i in 0..n_particles.len() {
-        let n: String = n_particles[i].to_string();
-        let cpu_time = cpu_times[i].to_string();
-        let g_radius: String = g_radii[i].to_string();
-        let max_seed: String = max_seeds[i].to_string();
-        let d_max: String = d_maxs[i].to_string();
+    for i in 0..results.len() {
+        let n: String = results[i].0.to_string();
+        let cpu_time = results[i].1.to_string();
+        let g_radius: String = results[i].2.to_string();
+        let max_seed: String = results[i].3.to_string();
+        let d_max: String = results[i].4.to_string();
 
         wtr.write_record([n, cpu_time, g_radius, max_seed, d_max])?;
     }
@@ -108,65 +106,10 @@ pub fn write_tree(data: &Data, params: &InputParams, seed: usize) -> Result<(), 
 
     // Iterate through Omega
     for item in &data.omega {
-        let x: String = item.1.0.to_string();
-        let y: String = item.1.1.to_string();
+        let x: String = item.1 .0.to_string();
+        let y: String = item.1 .1.to_string();
         wtr.write_record([x, y])?;
     }
 
     Ok(())
 }
-
-// pub fn write_csv(
-//     params: &SimulationParams,
-//     results: &SimulationResults,
-// ) -> Result<(), Box<dyn Error>> {
-//     // Unpack struct of params
-//     let r_max: f64 = params.max_radius as f64;
-//     let max_seed: i32 = params.max_seed;
-//     let init_seed: i32 = params.init_seed;
-
-//     // Check if the `data` folder exists. If not, create it
-//     let folder: String = String::from("data");
-//     if !(check_folder_exists(&folder)?) {
-//         fs::create_dir(&folder)?
-//     }
-
-//     // Create a filename based on input parameters
-//     let filepath = format!(
-//         "./{}/r{}_seeds{}_iseed{}.csv",
-//         folder, r_max, max_seed, init_seed
-//     );
-
-//     let mut wtr = csv::Writer::from_path(filepath)?;
-
-//     for i in 0..results.radii.len() {
-//         wtr.write_record(&[
-//             &results.radii[i].to_string(),
-//             &results.n_tree[i].to_string(),
-//         ])?;
-//     }
-
-//     Ok(())
-// }
-
-// pub fn write_bench(max_radii: &Vec<i32>, time: &Vec<u128>, particles: &Vec<f64>, r_max: i32, max_seed: i32) -> Result<(), Box<dyn Error>> {
-//     // Check if the `data` folder exists. If not, create it
-//     let folder: String = String::from("data");
-//     if !(check_folder_exists(&folder)?) {
-//         fs::create_dir(&folder)?
-//     }
-
-//     let filepath = format!("./{}/bench_r{}_seeds{}.csv", folder, r_max, max_seed);
-
-//     let mut wtr = csv::Writer::from_path(filepath)?;
-
-//     for i in 0..max_radii.len() {
-//         wtr.write_record(&[
-//             &max_radii[i].to_string(),
-//             &time[i].to_string(),
-//             &particles[i].to_string(),
-//         ])?;
-//     }
-
-//     Ok(())
-// }

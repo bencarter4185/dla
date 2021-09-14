@@ -17,6 +17,8 @@ use std::error::Error;
 
 use crate::sim::writer::write_g_radii;
 
+use rayon::prelude::*;
+
 /*
 Structs
 */
@@ -62,95 +64,44 @@ fn main() -> Result<(), Box<dyn Error>> {
     // Parse in the params from the `.ini` file.
     let params: InputParams = InputParams::new();
 
-    // if params.write_g == false {
-    //     setup_tree_sims(&params)?
-    // } else {
-    //     setup_fractal_sims(&params)?
-    // }
+    let mut sim_params: Vec<(usize, usize, u8, usize)> = Vec::new();
 
-    setup_tree_sims(&params)?;
-
-    Ok(())
-}
-
-// fn setup_fractal_sims(params: &InputParams) -> Result<(), Box<dyn Error>> {
-//     println!(r"Collecting gyration radii for particle numbers:
-// {:?}
-// ", params.n_particles);
-    
-//     // As we're collecting data across simulations, we have to collect the data here
-//     let n_particles: Vec<usize> = params.n_particles.clone();
-//     let mut g_radii: Vec<f64> = vec![0.0; n_particles.len()];
-    
-//     // Hard-coded to run for d_max = 90, seeds = 1000, array_size = 40001.
-//     // Don't want to adjust this in config.
-//     let a: usize = 40001;
-//     let d_max: u8 = 90;
-//     let max_seed: usize = 1000;
-
-//     let mut g_radius: f64;
-//     let mut i: usize = 0;
-
-//     for n in n_particles.iter() {
-//         let now: Instant = Instant::now();
-//         g_radius = sim::run_fractal(*n, a, d_max, max_seed, params)?;
-//         let new_now: Instant = Instant::now();
-
-//         println!(
-//             r"Done! Total time for n = {} is {:?}
-//                 ", *n,
-//             new_now.duration_since(now)
-//         );
-
-//         g_radii[i] = g_radius;
-//         i += 1;
-//     }
-
-//     // Now we've collected our data, we can save to disk
-//     write_g_radii(params, &n_particles, &g_radii, max_seed, d_max)?;
-
-//     Ok(())
-// }
-
-fn setup_tree_sims(params: &InputParams) -> Result<(), Box<dyn Error>> {
-    // Generate output vectors for cpu runtime and average radius
-    let mut particles: Vec<usize> = Vec::new();
-    let mut cpu_times: Vec<f64> = Vec::new();
-    let mut r_avgs: Vec<f64> = Vec::new();
-    let mut max_seeds: Vec<usize> = Vec::new();
-    let mut d_maxs: Vec<u8> = Vec::new();
-
-    // Iterate through the params provided and run simulations
     for (n, a, d_max, max_seed) in iproduct!(
         &params.n_particles,
         &params.array_sizes,
         &params.d_max_vals,
         &params.seeds
     ) {
-        println!(
-            "Running sim for n={} a={} d_max={} max_seed={}, init_seed={}",
-            n, a, d_max, max_seed, params.init_seed,
-        );
-
-        let now: Instant = Instant::now();
-        let (cpu_time, r_avg) = sim::run(*n, *a, *d_max, *max_seed, &params)?;
-        let new_now: Instant = Instant::now();
-        println!(
-            r"Done! Total time = {:?}
-                ",
-            new_now.duration_since(now)
-        );
-
-        // Add results to vectors
-        particles.push(*n);
-        cpu_times.push(cpu_time);
-        r_avgs.push(r_avg);
-        max_seeds.push(*max_seed);
-        d_maxs.push(*d_max);
+        sim_params.push((*n, *a, *d_max, *max_seed))
     }
 
+    let results: Vec<(usize, f64, f64, usize, u8)> = sim_params
+        .par_iter()
+        .map(|(n, a, d_max, max_seed)| {
+            let now: Instant = Instant::now();
+            let (cpu_time, r_avg) = match sim::run(*n, *a, *d_max, *max_seed, &params) {
+                Ok((cpu_time, r_avg)) => (cpu_time, r_avg),
+                Err(_) => panic!("Performing the simulation has failed!"),
+            };
+            let new_now: Instant = Instant::now();
+            println!(
+                r"Sim for n={} a={} d_max={} max_seed={}, init_seed={},
+Complete in {:?}
+",
+                n,
+                a,
+                d_max,
+                max_seed,
+                params.init_seed,
+                new_now.duration_since(now)
+            );
+
+            (*n, cpu_time, r_avg, *max_seed, *d_max)
+        })
+        .collect();
+
     if params.write_g == true {
-        write_g_radii( &particles, &cpu_times, &r_avgs, max_seeds, d_maxs)?;
+        write_g_radii(&results)?;
     }
 
     Ok(())
