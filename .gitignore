@@ -16,6 +16,7 @@
 /data/*
 !/data/tree_n100_dmax90_seed0_iseed0.csv
 !/data/tree_n100000_dmax90_seed0_iseed0.csv
+!/data/g_radii_nmin100_nmax5000000.csv
 
 # Ignore all figures except for the ones I specify
 /fig/*
