@@ -12,6 +12,7 @@ use std::time::Instant;
 use ini_parser::*;
 
 use itertools::iproduct;
+use sim::writer::erase_g_radii;
 
 use std::error::Error;
 
@@ -82,6 +83,11 @@ fn main() -> Result<(), Box<dyn Error>> {
     // Parse in the params from the `.ini` file.
     let params: InputParams = InputParams::new();
 
+    // Erase g_radii if exists
+    if params.write_g == true {
+        erase_g_radii(&params)?
+    }
+    
     // Run parallel sims if asked to, else run single-threaded
     match params.parallel {
         1 => setup_parallel(&params)?,
@@ -102,32 +108,14 @@ fn setup(params: &InputParams) -> Result<(), Box<dyn Error>> {
     ) {
         sim_params.push((*n, *a, *d_max, *max_seed))
     }
-    
-    let results: Vec<(usize, f64, f64, usize, u8)> = sim_params
-        .iter()
-        .map(|(n, a, d_max, max_seed)| {
-            let now: Instant = Instant::now();
-            
-            let mut cpu_time: f64 = 0.0;
-            let mut r_avg: f64 = 0.0;
-            
-            if params.parallel == 2 {
-                let (cpu_time_i, r_avg_i) = match sim::run_parallel(*n, *a, *d_max, *max_seed, &params) {
-                    Ok((cpu_time_i, r_avg_i)) => (cpu_time_i, r_avg_i),
-                    Err(_) => panic!("Performing the simulation has failed!"),
-                };
-                cpu_time += cpu_time_i;
-                r_avg += r_avg_i;
-            } else {
-                let (cpu_time_i, r_avg_i) = match sim::run(*n, *a, *d_max, *max_seed, &params) {
-                    Ok((cpu_time_i, r_avg_i)) => (cpu_time_i, r_avg_i),
-                    Err(_) => panic!("Performing the simulation has failed!"),
-                };
-                cpu_time += cpu_time_i;
-                r_avg += r_avg_i;
-            }
-            
 
+    if params.parallel == 2 {
+        sim_params.iter().for_each(|(n, a, d_max, max_seed)| {
+            let now: Instant = Instant::now();
+            let (cpu_time, r_avg) = match sim::run_parallel(*n, *a, *d_max, *max_seed, &params) {
+                Ok((cpu_time, r_avg)) => (cpu_time, r_avg),
+                Err(_) => panic!("Performing the simulation has failed!"),
+            };
             let new_now: Instant = Instant::now();
             println!(
                 r"Sim for n={} a={} d_max={} max_seed={}, init_seed={},
@@ -141,12 +129,46 @@ Complete in {:?}
                 new_now.duration_since(now)
             );
 
-            (*n, cpu_time, r_avg, *max_seed, *d_max)
-        })
-        .collect();
+            let results = (*n, cpu_time, r_avg, *max_seed, *d_max);
 
-    if params.write_g == true {
-        write_g_radii(&results)?;
+            if params.write_g == true {
+                match write_g_radii(&results, params) {
+                    Ok(_) => (),
+                    Err(_) => panic!("Writing results to csv has failed!"),
+                };
+            }
+        });
+    } else {
+        sim_params.iter().for_each(|(n, a, d_max, max_seed)| {
+            let now: Instant = Instant::now();
+            let (cpu_time, r_avg) = match sim::run(*n, *a, *d_max, *max_seed, &params) {
+                Ok((cpu_time, r_avg)) => (cpu_time, r_avg),
+                Err(_) => panic!("Performing the simulation has failed!"),
+            };
+            let new_now: Instant = Instant::now();
+            println!(
+                r"Sim for n={} a={} d_max={} max_seed={}, init_seed={},
+Complete in {:?}
+",
+                n,
+                a,
+                d_max,
+                max_seed,
+                params.init_seed,
+                new_now.duration_since(now)
+            );
+
+            let results = (*n, cpu_time, r_avg, *max_seed, *d_max);
+
+            if params.write_g == true {
+                match write_g_radii(&results, params) {
+                    Ok(_) => (),
+                    Err(_) => panic!("Writing results to csv has failed!"),
+                };
+            }
+
+            
+        });
     }
 
     Ok(())
@@ -166,34 +188,34 @@ fn setup_parallel(params: &InputParams) -> Result<(), Box<dyn Error>> {
 
     // Doesn't check for the option to run the seeds in parallel,
     //  since we're already running the sims in parallel
-    let results: Vec<(usize, f64, f64, usize, u8)> = sim_params
-        .par_iter()
-        .map(|(n, a, d_max, max_seed)| {
-            let now: Instant = Instant::now();
-            let (cpu_time, r_avg) = match sim::run(*n, *a, *d_max, *max_seed, &params) {
-                Ok((cpu_time, r_avg)) => (cpu_time, r_avg),
-                Err(_) => panic!("Performing the simulation has failed!"),
-            };
-            let new_now: Instant = Instant::now();
-            println!(
-                r"Sim for n={} a={} d_max={} max_seed={}, init_seed={},
+    sim_params.par_iter().for_each(|(n, a, d_max, max_seed)| {
+        let now: Instant = Instant::now();
+        let (cpu_time, r_avg) = match sim::run(*n, *a, *d_max, *max_seed, &params) {
+            Ok((cpu_time, r_avg)) => (cpu_time, r_avg),
+            Err(_) => panic!("Performing the simulation has failed!"),
+        };
+        let new_now: Instant = Instant::now();
+        println!(
+            r"Sim for n={} a={} d_max={} max_seed={}, init_seed={},
 Complete in {:?}
 ",
-                n,
-                a,
-                d_max,
-                max_seed,
-                params.init_seed,
-                new_now.duration_since(now)
-            );
+            n,
+            a,
+            d_max,
+            max_seed,
+            params.init_seed,
+            new_now.duration_since(now)
+        );
 
-            (*n, cpu_time, r_avg, *max_seed, *d_max)
-        })
-        .collect();
+        let results = (*n, cpu_time, r_avg, *max_seed, *d_max);
 
-    if params.write_g == true {
-        write_g_radii(&results)?;
-    }
+        if params.write_g == true {
+            match write_g_radii(&results, params) {
+                Ok(_) => (),
+                Err(_) => panic!("Writing results to csv has failed!"),
+            };
+        }
+    });
 
     Ok(())
 }

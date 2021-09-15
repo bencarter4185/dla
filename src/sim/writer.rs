@@ -1,5 +1,6 @@
 extern crate csv;
 use std::error::Error;
+use std::fs::OpenOptions;
 use std::{env, fs};
 
 use crate::InputParams;
@@ -21,7 +22,7 @@ pub fn check_folder_exists(folder: &String) -> Result<bool, Box<dyn Error>> {
     Ok(folder_exists)
 }
 
-pub fn write_g_radii(results: &Vec<(usize, f64, f64, usize, u8)>) -> Result<(), Box<dyn Error>> {
+pub fn erase_g_radii(params: &InputParams) -> Result<(), Box<dyn Error>> {
     // Check if the `data` folder exists. If not, create it
     let folder: String = String::from("data");
     if !(check_folder_exists(&folder)?) {
@@ -32,26 +33,59 @@ pub fn write_g_radii(results: &Vec<(usize, f64, f64, usize, u8)>) -> Result<(), 
     let mut n_min: usize = usize::MAX;
     let mut n_max: usize = 0;
 
-    for result in results {
-        n_min = if result.0 < n_min { result.0 } else { n_min };
-        n_max = if result.0 > n_max { result.0 } else { n_max };
+    for radius in &params.n_particles {
+        n_min = if *radius < n_min { *radius } else { n_min };
+        n_max = if *radius > n_max { *radius } else { n_max };
     }
 
     // Create filename
     let filepath = format!("./{}/g_radii_nmin{}_nmax{}.csv", folder, n_min, n_max);
 
-    let mut wtr = csv::Writer::from_path(filepath)?;
+    match fs::remove_file(&filepath) {
+        Ok(_) => (),
+        Err(_) => (),
+    };
+
+    Ok(())
+}
+
+pub fn write_g_radii(
+    results: &(usize, f64, f64, usize, u8),
+    params: &InputParams,
+) -> Result<(), Box<dyn Error>> {
+    // Check if the `data` folder exists. If not, create it
+    let folder: String = String::from("data");
+    if !(check_folder_exists(&folder)?) {
+        fs::create_dir(&folder)?
+    }
+
+    // Get max and min n_particles
+    let mut n_min: usize = usize::MAX;
+    let mut n_max: usize = 0;
+
+    for radius in &params.n_particles {
+        n_min = if *radius < n_min { *radius } else { n_min };
+        n_max = if *radius > n_max { *radius } else { n_max };
+    }
+
+    // Create filename
+    let filepath = format!("./{}/g_radii_nmin{}_nmax{}.csv", folder, n_min, n_max);
+
+    let mut wtr = match OpenOptions::new().write(true).append(true).open(&filepath) {
+        // If ok, file exists, and we can append to file
+        //  else, create a new file with contents
+        Ok(file) => csv::Writer::from_writer(file),
+        Err(_) => csv::Writer::from_path(&filepath)?,
+    };
 
     // Iterate through results and add to file
-    for i in 0..results.len() {
-        let n: String = results[i].0.to_string();
-        let cpu_time = results[i].1.to_string();
-        let g_radius: String = results[i].2.to_string();
-        let max_seed: String = results[i].3.to_string();
-        let d_max: String = results[i].4.to_string();
+    let n: String = results.0.to_string();
+    let cpu_time = results.1.to_string();
+    let g_radius: String = results.2.to_string();
+    let max_seed: String = results.3.to_string();
+    let d_max: String = results.4.to_string();
 
-        wtr.write_record([n, cpu_time, g_radius, max_seed, d_max])?;
-    }
+    wtr.write_record([n, cpu_time, g_radius, max_seed, d_max])?;
 
     Ok(())
 }
