@@ -62,7 +62,8 @@ pub struct Data {
     c: u8,        // Collision condition
     // Arrays
     /* Omega: Off-lattice array of size n (number of particles) x 2 */
-    omega: HashMap<usize, (f32, f32)>,
+    // omega: HashMap<usize, (f32, f32)>,
+    omega: HashMap<Vec<u32>, (f32, f32)>,
     /* Theta: Vicinity grid */
     theta: ArrayBase<OwnedRepr<u8>, Dim<[usize; 2]>>,
     /* Psi: On-lattice distance grid */
@@ -336,7 +337,8 @@ fn reset_data(data: &mut Data, params: &InputParams, seed: usize) {
     data.psi.fill(data.d_max);
 
     // Add seed particle at origin
-    data.omega.insert(cantor(data.ix0_a, data.iy0_a), (x0, y0));
+    // data.omega.insert(cantor(data.ix0_a, data.iy0_a), (x0, y0));
+    data.omega.insert(vec![data.ix0_a as u32, data.iy0_a as u32], (x0, y0));
     overlap_psi_theta(data, x0, y0);
 
     // Redefine random number generator
@@ -425,7 +427,8 @@ fn launch_particles(data: &mut Data) {
 
                         // Update arrays
                         let (xi, yi) = get_array_index(x, y, data.a);
-                        data.omega.insert(cantor(xi, yi), (x, y));
+                        // data.omega.insert(cantor(xi, yi), (x, y));
+                        data.omega.insert(vec![xi as u32, yi as u32], (x, y));
                         overlap_psi_theta(data, x, y);
 
                         // Increment i
@@ -502,9 +505,11 @@ fn find_particles(data: &mut Data, x: f32, y: f32) -> Vec<(f32, f32)> {
         // If there is a particle in the cell, add it to particles
         if val == 0 {
             // Get the `label` of this grid position
-            let can: usize = cantor(ixp, iyp);
-            x = data.omega[&can].0;
-            y = data.omega[&can].1;
+            // let can: usize = cantor(ixp, iyp);
+            // x = data.omega[&can].0;
+            // y = data.omega[&can].1;
+            x = data.omega[&vec![ixp as u32, iyp as u32]].0;
+            y = data.omega[&vec![ixp as u32, iyp as u32]].1;
 
             particles.push((x, y))
         }
@@ -697,7 +702,7 @@ fn max_f32(a: f32, b: f32) -> f32 {
     }
 }
 
-fn cantor(k1: usize, k2: usize) -> usize {
+fn _cantor(k1: usize, k2: usize) -> usize {
     // Return a unique integer based on the two numbers
     ((k1 + k2) * (k1 + k2 + 1)) / 2 + k2
 }
