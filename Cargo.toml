@@ -14,4 +14,3 @@ csv = "1.1.6" # Write to csv
 itertools = "0.10.1" # Itertools, similar to in python
 rayon = "1.5.1" # Parallelisation
 kurbo = "0.8.1" # Quadratic equation solver
-hashbrown = "0.11.2" # Optimised hashmaps

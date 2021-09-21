@@ -30,7 +30,7 @@ use crate::{
 
 mod random;
 
-use hashbrown::HashMap;
+use std::collections::HashMap;
 
 /*
 Constants
@@ -63,7 +63,7 @@ pub struct Data {
     // Arrays
     /* Omega: Off-lattice array of size n (number of particles) x 2 */
     // omega: HashMap<usize, (f32, f32)>,
-    omega: HashMap<Vec<u32>, (f32, f32)>,
+    omega: HashMap<(u32, u32), (f32, f32)>,
     /* Theta: Vicinity grid */
     theta: ArrayBase<OwnedRepr<u8>, Dim<[usize; 2]>>,
     /* Psi: On-lattice distance grid */
@@ -149,6 +149,8 @@ pub fn run(
     let mut cpu_time: f64 = 0.0;
     let mut r_avg: f64 = 0.0;
 
+    // let mut max_radius: f32 = 0.0;
+
     // Iterate over the random number seed
     for seed in seeds.iter() {
         // Reset the items in data
@@ -176,7 +178,20 @@ pub fn run(
         }
         cpu_time += cpu_time_i / max_seed as f64;
         r_avg += r_avg_i / max_seed as f64;
+
+        // if data.r_max > max_radius {max_radius = data.r_max};
+
     }
+
+    // let filled = data.psi.iter().filter(|&val| *val != data.d_max).count();
+    // let size = data.psi.len();
+
+    // let sparsity = filled as f64 / size as f64 * 100.0;
+
+    // println!("Psi has {} elements, of which {} are not D_max, with a usage of {}%", size, filled, sparsity);
+    
+    // println!("Maximum radius for n = {} across {:?} seeds is: {}", data.n, max_seed, max_radius);
+
 
     if params.write_data == true {
         write_data(n, params, radii, n_tree, max_seed, d_max)?;
@@ -338,7 +353,7 @@ fn reset_data(data: &mut Data, params: &InputParams, seed: usize) {
 
     // Add seed particle at origin
     // data.omega.insert(cantor(data.ix0_a, data.iy0_a), (x0, y0));
-    data.omega.insert(vec![data.ix0_a as u32, data.iy0_a as u32], (x0, y0));
+    data.omega.insert((data.ix0_a as u32, data.iy0_a as u32), (x0, y0));
     overlap_psi_theta(data, x0, y0);
 
     // Redefine random number generator
@@ -428,7 +443,7 @@ fn launch_particles(data: &mut Data) {
                         // Update arrays
                         let (xi, yi) = get_array_index(x, y, data.a);
                         // data.omega.insert(cantor(xi, yi), (x, y));
-                        data.omega.insert(vec![xi as u32, yi as u32], (x, y));
+                        data.omega.insert((xi as u32, yi as u32), (x, y));
                         overlap_psi_theta(data, x, y);
 
                         // Increment i
@@ -508,8 +523,8 @@ fn find_particles(data: &mut Data, x: f32, y: f32) -> Vec<(f32, f32)> {
             // let can: usize = cantor(ixp, iyp);
             // x = data.omega[&can].0;
             // y = data.omega[&can].1;
-            x = data.omega[&vec![ixp as u32, iyp as u32]].0;
-            y = data.omega[&vec![ixp as u32, iyp as u32]].1;
+            x = data.omega[&(ixp as u32, iyp as u32)].0;
+            y = data.omega[&(ixp as u32, iyp as u32)].1;
 
             particles.push((x, y))
         }
