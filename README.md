@@ -1,6 +1,9 @@
 # dla
 Diffusion-limited aggregation
 
+##
+UPDATE: Have found what may be a more optimised algorithm [here.](https://doi.org/10.17863/CAM.53214) Will investigate in a different GitHub repository.
+
 ## Intro
 
 This is my mini-project for [Diffusion-limited aggregation](https://en.wikipedia.org/wiki/Diffusion-limited_aggregation). The motivation was to write a DLA simulation which scales efficiently with the number of particles added.
